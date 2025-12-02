@@ -44,10 +44,11 @@ fn test_concurrency_conflict() -> Result<(), Box<dyn std::error::Error>> {
     assert!(result.is_err());
     let err = result.unwrap_err();
     match err {
-        varvedb::error::Error::Validation(msg) => {
-            assert!(msg.contains("Concurrency conflict"));
+        varvedb::error::Error::ConcurrencyConflict { stream_id, version } => {
+            assert_eq!(stream_id, 1);
+            assert_eq!(version, 1);
         }
-        _ => panic!("Expected Validation error, got {:?}", err),
+        _ => panic!("Expected ConcurrencyConflict error, got {:?}", err),
     }
 
     Ok(())
