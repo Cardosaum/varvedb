@@ -3,6 +3,10 @@ use crate::storage::Storage;
 use crate::metrics::VarveMetrics;
 use std::sync::Arc;
 
+/// The `Writer` struct handles appending events to the store.
+///
+/// It ensures concurrency control via optimistic locking on `(stream_id, version)`
+/// and notifies subscribers of new events.
 pub struct Writer<E> {
     storage: Storage,
     tx: tokio::sync::watch::Sender<u64>,
@@ -93,6 +97,9 @@ where
     }
 }
 
+/// The `Reader` struct provides zero-copy access to events.
+///
+/// It uses `rkyv` to validate and read events directly from the memory-mapped file.
 pub struct Reader<E> {
     storage: Storage,
     metrics: Option<Arc<VarveMetrics>>,

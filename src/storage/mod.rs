@@ -26,6 +26,8 @@ impl StreamKey {
     }
 }
 
+/// Configuration for opening a VarveDB storage environment.
+#[derive(Clone)]
 pub struct StorageConfig {
     pub path: PathBuf,
     pub map_size: usize,

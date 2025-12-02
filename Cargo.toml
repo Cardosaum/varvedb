@@ -17,3 +17,21 @@ uuid = { version = "1.7.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tempfile = "3.10.0"
+criterion = "0.5.1"
+proptest = "1.4.0"
+
+[[bench]]
+name = "write_bench"
+harness = false
+
+[[bench]]
+name = "read_bench"
+harness = false
+
+[[bench]]
+name = "concurrent_bench"
+harness = false
+
+[[bench]]
+name = "payload_bench"
+harness = false
