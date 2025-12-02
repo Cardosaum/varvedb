@@ -1,8 +1,8 @@
+use varvedb::engine::{Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
-use varvedb::engine::{Writer, Reader};
 
+use rkyv::{Archive, Deserialize, Serialize};
 use tempfile::tempdir;
-use rkyv::{Archive, Serialize, Deserialize};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[archive(check_bytes)]
@@ -33,7 +33,7 @@ fn test_basic_write_read() -> Result<(), Box<dyn std::error::Error>> {
 
     let storage = Storage::open(config)?;
     let mut writer = Writer::<SystemEvent>::new(storage.clone());
-    
+
     let event = SystemEvent::V1(EventV1 {
         stream_id: 1,
         kind: 100,
@@ -45,11 +45,11 @@ fn test_basic_write_read() -> Result<(), Box<dyn std::error::Error>> {
 
     let reader = Reader::<SystemEvent>::new(storage.clone());
     let txn = storage.env.read_txn()?;
-    
+
     // Read back
     let fetched = reader.get(&txn, 1)?;
     assert!(fetched.is_some());
-    
+
     let event = fetched.unwrap();
     match event {
         rkyv::Archived::<SystemEvent>::V1(v1) => {

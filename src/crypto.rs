@@ -3,7 +3,7 @@ use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, KeyInit},
 };
-use rand::{Rng, RngCore};
+use rand::RngCore;
 
 pub struct KeyManager {
     storage: Storage,
@@ -19,7 +19,7 @@ impl KeyManager {
 
         if let Some(key_bytes) = self.storage.keystore.get(&txn, &stream_id)? {
             let mut key = [0u8; 32];
-            key.copy_from_slice(&key_bytes);
+            key.copy_from_slice(key_bytes);
             txn.commit()?;
             Ok(key)
         } else {

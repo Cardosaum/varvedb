@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-heed = "0.20.0"
-rkyv = { version = "0.7.44", features = ["validation"] }
-tokio = { version = "1.36.0", features = ["full"] }
-thiserror = "1.0.57"
-uuid = { version = "1.7.0", features = ["v4", "serde"] }
 aes-gcm = "0.10.3"
-rand = "0.8.5"
-prometheus = "0.13.3"
-bytes = "1.5.0"
 bytemuck = "1.14.3"
+bytes = "1.5.0"
+heed = "0.20.5"
+prometheus = "0.13.3"
+rand = "0.8.5"
+rkyv = { version = "0.7.44", features = ["validation"] }
+thiserror = "1.0.57"
+tokio = { version = "1.36.0", features = ["full"] }
+uuid = { version = "1.7.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tempfile = "3.10.0"

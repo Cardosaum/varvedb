@@ -1,10 +1,7 @@
-
 use crate::storage::Storage;
 
-
-
-use std::sync::Arc;
 use crate::metrics::VarveMetrics;
+use std::sync::Arc;
 
 pub struct Writer<E> {
     storage: Storage,
@@ -13,12 +10,18 @@ pub struct Writer<E> {
     _marker: std::marker::PhantomData<E>,
 }
 
-impl<E> Writer<E> 
-where E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<1024>>,
+impl<E> Writer<E>
+where
+    E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<1024>>,
 {
     pub fn new(storage: Storage) -> Self {
         let (tx, _) = tokio::sync::watch::channel(0);
-        Self { storage, tx, metrics: None, _marker: std::marker::PhantomData }
+        Self {
+            storage,
+            tx,
+            metrics: None,
+            _marker: std::marker::PhantomData,
+        }
     }
 
     pub fn with_metrics(mut self, metrics: Arc<VarveMetrics>) -> Self {
@@ -31,15 +34,23 @@ where E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer
     }
 
     pub fn append(&mut self, stream_id: u128, version: u32, event: E) -> crate::error::Result<()> {
-        let _timer = self.metrics.as_ref().map(|m| m.append_latency.start_timer());
-        
+        let _timer = self
+            .metrics
+            .as_ref()
+            .map(|m| m.append_latency.start_timer());
+
         let mut txn = self.storage.env.write_txn()?;
 
         // 1. Concurrency Check: Check if (stream_id, version) already exists
         let key = crate::storage::StreamKey::new(stream_id, version);
         let key_bytes = key.to_be_bytes();
 
-        if self.storage.stream_index.get(&txn, &key_bytes.as_slice())?.is_some() {
+        if self
+            .storage
+            .stream_index
+            .get(&txn, key_bytes.as_slice())?
+            .is_some()
+        {
             return Err(crate::error::Error::Validation(format!(
                 "Concurrency conflict: Stream {} version {} already exists",
                 stream_id, version
@@ -47,30 +58,37 @@ where E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer
         }
 
         // 2. Get next Global Sequence
-        let last_seq = self.storage.events_log.last(&txn)?.map(|(k, _)| k).unwrap_or(0);
+        let last_seq = self
+            .storage
+            .events_log
+            .last(&txn)?
+            .map(|(k, _)| k)
+            .unwrap_or(0);
         let new_seq = last_seq + 1;
 
         // 3. Serialize Event (Zero-copy friendly)
         let bytes = rkyv::to_bytes::<_, 1024>(&event)
             .map_err(|e| crate::error::Error::Serialization(e.to_string()))?;
-            
+
         let bytes_len = bytes.len() as u64;
 
         // 4. Write to Log and Index
         self.storage.events_log.put(&mut txn, &new_seq, &bytes)?;
-        self.storage.stream_index.put(&mut txn, &key_bytes.as_slice(), &new_seq)?;
+        self.storage
+            .stream_index
+            .put(&mut txn, key_bytes.as_slice(), &new_seq)?;
 
         txn.commit()?;
-        
+
         // 5. Notify Subscribers
         let _ = self.tx.send(new_seq);
-        
+
         // 6. Metrics
         if let Some(metrics) = &self.metrics {
             metrics.events_appended.inc();
             metrics.bytes_written.inc_by(bytes_len);
         }
-        
+
         Ok(())
     }
 }
@@ -81,12 +99,17 @@ pub struct Reader<E> {
     _marker: std::marker::PhantomData<E>,
 }
 
-impl<E> Reader<E> 
-where E: rkyv::Archive,
-      E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>
+impl<E> Reader<E>
+where
+    E: rkyv::Archive,
+    E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
 {
     pub fn new(storage: Storage) -> Self {
-        Self { storage, metrics: None, _marker: std::marker::PhantomData }
+        Self {
+            storage,
+            metrics: None,
+            _marker: std::marker::PhantomData,
+        }
     }
 
     pub fn with_metrics(mut self, metrics: Arc<VarveMetrics>) -> Self {
@@ -94,16 +117,20 @@ where E: rkyv::Archive,
         self
     }
 
-    pub fn get<'txn>(&self, txn: &'txn heed::RoTxn, seq: u64) -> crate::error::Result<Option<&'txn E::Archived>> {
+    pub fn get<'txn>(
+        &self,
+        txn: &'txn heed::RoTxn,
+        seq: u64,
+    ) -> crate::error::Result<Option<&'txn E::Archived>> {
         match self.storage.events_log.get(txn, &seq)? {
             Some(bytes) => {
                 let archived = rkyv::check_archived_root::<E>(bytes)
                     .map_err(|e| crate::error::Error::Validation(e.to_string()))?;
-                
+
                 if let Some(metrics) = &self.metrics {
                     metrics.events_read.inc();
                 }
-                
+
                 Ok(Some(archived))
             }
             None => Ok(None),
@@ -111,9 +138,10 @@ where E: rkyv::Archive,
     }
 }
 
-pub trait EventHandler<E> 
-where E: rkyv::Archive,
-      E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>
+pub trait EventHandler<E>
+where
+    E: rkyv::Archive,
+    E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
 {
     fn handle(&mut self, event: &E::Archived) -> crate::error::Result<()>;
 }
@@ -126,27 +154,40 @@ pub struct Processor<E, H> {
 }
 
 impl<E, H> Processor<E, H>
-where E: rkyv::Archive,
-      E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
-      H: EventHandler<E>,
+where
+    E: rkyv::Archive,
+    E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
+    H: EventHandler<E>,
 {
-    pub fn new(reader: Reader<E>, handler: H, consumer_name: &str, rx: tokio::sync::watch::Receiver<u64>) -> Self {
+    pub fn new(
+        reader: Reader<E>,
+        handler: H,
+        consumer_name: &str,
+        rx: tokio::sync::watch::Receiver<u64>,
+    ) -> Self {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         consumer_name.hash(&mut hasher);
         let consumer_id = hasher.finish();
 
-        Self { reader, handler, consumer_id, rx }
+        Self {
+            reader,
+            handler,
+            consumer_id,
+            rx,
+        }
     }
 
     pub async fn run(&mut self) -> crate::error::Result<()> {
-
-
         loop {
             // 1. Get current cursor
             let current_seq = {
                 let txn = self.reader.storage.env.read_txn()?;
-                self.reader.storage.consumer_cursors.get(&txn, &self.consumer_id)?.unwrap_or(0)
+                self.reader
+                    .storage
+                    .consumer_cursors
+                    .get(&txn, &self.consumer_id)?
+                    .unwrap_or(0)
             };
 
             // 2. Check head
@@ -155,26 +196,39 @@ where E: rkyv::Archive,
             if current_seq < head_seq {
                 // Catch up mode
                 let txn = self.reader.storage.env.read_txn()?;
-                
+
                 let next_seq = current_seq + 1;
                 if let Some(event) = self.reader.get(&txn, next_seq)? {
                     self.handler.handle(event)?;
-                    
+
                     drop(txn); // Drop read txn
-                    
+
                     let mut wtxn = self.reader.storage.env.write_txn()?;
-                    self.reader.storage.consumer_cursors.put(&mut wtxn, &self.consumer_id, &next_seq)?;
+                    self.reader.storage.consumer_cursors.put(
+                        &mut wtxn,
+                        &self.consumer_id,
+                        &next_seq,
+                    )?;
                     wtxn.commit()?;
                 } else {
                     // Gap? Just bump cursor.
                     drop(txn);
                     let mut wtxn = self.reader.storage.env.write_txn()?;
-                    self.reader.storage.consumer_cursors.put(&mut wtxn, &self.consumer_id, &next_seq)?;
+                    self.reader.storage.consumer_cursors.put(
+                        &mut wtxn,
+                        &self.consumer_id,
+                        &next_seq,
+                    )?;
                     wtxn.commit()?;
                 }
             } else {
                 // Wait mode
-                self.rx.changed().await.map_err(|_| crate::error::Error::Io(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Sender dropped")))?;
+                self.rx.changed().await.map_err(|_| {
+                    crate::error::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "Sender dropped",
+                    ))
+                })?;
             }
         }
     }
