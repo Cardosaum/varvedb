@@ -20,7 +20,9 @@ fn test_persistence_after_close() -> Result<(), Box<dyn std::error::Error>> {
         path: db_path.clone(),
         map_size: 10 * 1024 * 1024,
         max_dbs: 10,
-        create_dir: true, encryption_enabled: false,
+        create_dir: true,
+        encryption_enabled: false,
+        master_key: None,
     };
 
     // 1. Open, Write, Close

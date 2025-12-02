@@ -1,4 +1,4 @@
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::{Arc, Barrier};
 use std::thread;
@@ -20,7 +20,9 @@ fn concurrent_benchmark(c: &mut Criterion) {
         path: dir.path().join("bench_concurrent.mdb"),
         map_size: 10 * 1024 * 1024 * 1024,
         max_dbs: 10,
-        create_dir: true, encryption_enabled: false,
+        create_dir: true,
+        encryption_enabled: false,
+        master_key: None,
     };
     let storage = Storage::open(config).unwrap();
 

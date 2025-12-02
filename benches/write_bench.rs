@@ -1,4 +1,4 @@
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rkyv::{Archive, Deserialize, Serialize};
 use tempfile::tempdir;
 use varvedb::engine::Writer;
@@ -18,7 +18,9 @@ fn write_benchmark(c: &mut Criterion) {
         path: dir.path().join("bench.mdb"),
         map_size: 10 * 1024 * 1024 * 1024,
         max_dbs: 10,
-        create_dir: true, encryption_enabled: false,
+        create_dir: true,
+        encryption_enabled: false,
+        master_key: None,
     };
     let storage = Storage::open(config).unwrap();
     let mut writer = Writer::<BenchEvent>::new(storage.clone());

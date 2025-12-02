@@ -37,7 +37,11 @@ pub struct MyEvent {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = StorageConfig::default();
+    let config = StorageConfig {
+        encryption_enabled: true,
+        master_key: Some([0u8; 32]), // Provide a 32-byte master key
+        ..Default::default()
+    };
     let storage = Storage::open(config)?;
     
     let mut writer = Writer::<MyEvent>::new(storage.clone());
@@ -114,6 +118,17 @@ graph TD
 -   **Storage Engine**: LMDB (via `heed` crate).
 -   **Serialization**: `rkyv` (guaranteed zero-copy).
 -   **Async Runtime**: `tokio`.
+
+## Security
+
+### Encryption at Rest
+VarveDB supports encryption at rest using AES-256-GCM.
+To enable it, set `encryption_enabled: true` in `StorageConfig` and provide a 32-byte `master_key`.
+
+The `master_key` is used to encrypt the per-stream keys stored in the database. This ensures that even if the database file is compromised, the data remains secure as long as the master key is protected.
+
+### Stream ID Leakage
+Note that while the event payload is encrypted, the **Stream ID** is currently stored in plaintext in the event header to allow for efficient indexing. This means an attacker with access to the raw database can see which streams are active and the volume of data they produce, but cannot read the content.
 
 ## License
 

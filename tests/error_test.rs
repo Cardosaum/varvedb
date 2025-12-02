@@ -17,7 +17,9 @@ fn test_concurrency_conflict() -> Result<(), Box<dyn std::error::Error>> {
         path: dir.path().join("error_test.mdb"),
         map_size: 10 * 1024 * 1024,
         max_dbs: 10,
-        create_dir: true, encryption_enabled: false,
+        create_dir: true,
+        encryption_enabled: false,
+        master_key: None,
     };
     let storage = Storage::open(config)?;
     let mut writer = Writer::<ErrorEvent>::new(storage.clone());

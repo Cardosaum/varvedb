@@ -30,6 +30,7 @@ fn test_basic_write_read() -> Result<(), Box<dyn std::error::Error>> {
         max_dbs: 10,
         create_dir: true,
         encryption_enabled: false,
+        master_key: None,
     };
 
     let storage = Storage::open(config)?;

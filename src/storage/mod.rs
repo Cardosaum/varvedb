@@ -39,6 +39,8 @@ pub struct StorageConfig {
     pub create_dir: bool,
     /// Whether to enable encryption at rest (default: false).
     pub encryption_enabled: bool,
+    /// Master Key for encrypting the KeyStore (required if encryption_enabled is true).
+    pub master_key: Option<[u8; 32]>,
 }
 
 impl Default for StorageConfig {
@@ -49,6 +51,7 @@ impl Default for StorageConfig {
             max_dbs: 10,
             create_dir: true,
             encryption_enabled: false,
+            master_key: None,
         }
     }
 }

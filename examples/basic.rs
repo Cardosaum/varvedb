@@ -16,7 +16,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         path: dir.path().join("basic_example.mdb"),
         map_size: 10 * 1024 * 1024,
         max_dbs: 10,
-        create_dir: true, encryption_enabled: false,
+        create_dir: true,
+        encryption_enabled: false,
+        master_key: None,
     };
     let storage = Storage::open(config)?;
 

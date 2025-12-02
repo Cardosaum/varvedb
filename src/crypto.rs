@@ -18,7 +18,12 @@ use rand::RngCore;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let dir = tempdir()?;
-/// let config = StorageConfig { path: dir.path().to_path_buf(), ..Default::default() };
+/// let config = StorageConfig {
+///     path: dir.path().to_path_buf(),
+///     encryption_enabled: true,
+///     master_key: Some([0u8; 32]),
+///     ..Default::default()
+/// };
 /// let storage = Storage::open(config)?;
 /// let key_manager = KeyManager::new(storage);
 ///
@@ -37,6 +42,12 @@ impl KeyManager {
         Self { storage }
     }
 
+    fn get_master_key(&self) -> crate::error::Result<&[u8; 32]> {
+        self.storage.config.master_key.as_ref().ok_or_else(|| {
+            crate::error::Error::Validation("Master key required for encryption".to_string())
+        })
+    }
+
     pub fn get_or_create_key(&self, stream_id: u128) -> crate::error::Result<[u8; 32]> {
         let mut txn = self.storage.env.write_txn()?;
         let key = self.get_or_create_key_with_txn(&mut txn, stream_id)?;
@@ -50,15 +61,32 @@ impl KeyManager {
         stream_id: u128,
     ) -> crate::error::Result<[u8; 32]> {
         match self.storage.keystore.get(txn, &stream_id)? {
-            Some(key_bytes) => {
+            Some(encrypted_key_bytes) => {
+                // Decrypt existing key
+                let master_key = self.get_master_key()?;
+                let aad = stream_id.to_be_bytes(); // Bind key to StreamID
+                let plaintext_key_vec = decrypt(master_key, encrypted_key_bytes, &aad)?;
+
                 let mut key = [0u8; 32];
-                key.copy_from_slice(key_bytes);
+                if plaintext_key_vec.len() != 32 {
+                    return Err(crate::error::Error::Validation(
+                        "Invalid decrypted key length".to_string(),
+                    ));
+                }
+                key.copy_from_slice(&plaintext_key_vec);
                 Ok(key)
             }
             None => {
+                // Generate new key
                 let mut key = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut key);
-                self.storage.keystore.put(txn, &stream_id, &key)?;
+
+                // Encrypt with Master Key
+                let master_key = self.get_master_key()?;
+                let aad = stream_id.to_be_bytes();
+                let encrypted_key = encrypt(master_key, &key, &aad)?;
+
+                self.storage.keystore.put(txn, &stream_id, &encrypted_key)?;
                 Ok(key)
             }
         }
@@ -75,9 +103,18 @@ impl KeyManager {
         stream_id: u128,
     ) -> crate::error::Result<Option<[u8; 32]>> {
         match self.storage.keystore.get(txn, &stream_id)? {
-            Some(key_bytes) => {
+            Some(encrypted_key_bytes) => {
+                let master_key = self.get_master_key()?;
+                let aad = stream_id.to_be_bytes();
+                let plaintext_key_vec = decrypt(master_key, encrypted_key_bytes, &aad)?;
+
                 let mut key = [0u8; 32];
-                key.copy_from_slice(key_bytes);
+                if plaintext_key_vec.len() != 32 {
+                    return Err(crate::error::Error::Validation(
+                        "Invalid decrypted key length".to_string(),
+                    ));
+                }
+                key.copy_from_slice(&plaintext_key_vec);
                 Ok(Some(key))
             }
             None => Ok(None),
