@@ -66,7 +66,7 @@ fn bench_encryption_overhead(c: &mut Criterion) {
                 let event = BenchEvent { data: [0u8; 1024] };
 
                 // Pre-fill
-                for i in 1..=1000 {
+                for i in 1..=100 {
                     writer.append(1, i, event.clone()).unwrap();
                 }
 
@@ -75,7 +75,7 @@ fn bench_encryption_overhead(c: &mut Criterion) {
 
                 let mut seq = 0;
                 b.iter(|| {
-                    seq = (seq % 1000) + 1;
+                    seq = (seq % 100) + 1;
                     reader.get(&txn, seq).unwrap().unwrap();
                 });
             },
