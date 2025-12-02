@@ -26,11 +26,7 @@ fn test_basic_write_read() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let config = StorageConfig {
         path: dir.path().join("test.mdb"),
-        map_size: 10 * 1024 * 1024, // 10MB
-        max_dbs: 10,
-        create_dir: true,
-        encryption_enabled: false,
-        master_key: None,
+        ..Default::default()
     };
 
     let storage = Storage::open(config)?;
@@ -48,7 +44,6 @@ fn test_basic_write_read() -> Result<(), Box<dyn std::error::Error>> {
     let reader = Reader::<SystemEvent>::new(storage.clone());
     let txn = storage.env.read_txn()?;
 
-    // Read back
     let fetched = reader.get(&txn, 1)?;
     assert!(fetched.is_some());
 

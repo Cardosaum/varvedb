@@ -16,11 +16,7 @@ fn write_benchmark(c: &mut Criterion) {
     let dir = tempdir().unwrap();
     let config = StorageConfig {
         path: dir.path().join("bench.mdb"),
-        map_size: 10 * 1024 * 1024 * 1024,
-        max_dbs: 10,
-        create_dir: true,
-        encryption_enabled: false,
-        master_key: None,
+        ..Default::default()
     };
     let storage = Storage::open(config).unwrap();
     let mut writer = Writer::<BenchEvent>::new(storage.clone());

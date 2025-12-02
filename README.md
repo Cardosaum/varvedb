@@ -1,19 +1,19 @@
 # VarveDB
 
-VarveDB is a high-performance, embedded, append-only event store written in Rust. It leverages **LMDB** (Lightning Memory-Mapped Database) for storage and **rkyv** for zero-copy deserialization, making it incredibly fast and memory-efficient.
+A high-performance, embedded, append-only event store for Rust.
+
+VarveDB provides a persistent, ACID-compliant event log optimized for high-throughput event sourcing. It leverages **LMDB** for reliable storage and **rkyv** for zero-copy deserialization, ensuring minimal overhead.
 
 ## Features
 
--   **Zero-Copy Reads**: Events are accessed directly from memory-mapped files without heap allocation using `rkyv`.
--   **ACID Transactions**: Fully ACID compliant writes and reads via LMDB.
--   **Reactive Bus**: Real-time event subscriptions using `tokio::watch`.
--   **Concurrency Control**: Optimistic concurrency control using stream versioning.
--   **Crypto-Shredding**: Built-in key management for per-stream encryption, enabling GDPR-compliant data deletion.
--   **Observability**: Integrated Prometheus metrics for monitoring throughput and latency.
+*   **Zero-Copy Access**: Events are mapped directly from disk to memory.
+*   **ACID Transactions**: Atomic, Consistent, Isolated, and Durable writes.
+*   **Optimistic Concurrency**: Stream versioning prevents race conditions.
+*   **Reactive Interface**: Real-time event subscriptions via `tokio::watch`.
+*   **Authenticated Encryption**: Optional AES-256-GCM encryption with AAD binding.
+*   **GDPR Compliance**: Crypto-shredding support via key deletion.
 
 ## Installation
-
-Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -22,7 +22,7 @@ varvedb = { path = "." } # Or git URL
 
 ## Usage
 
-### Basic Write and Read
+### Basic Operation
 
 ```rust
 use varvedb::storage::{Storage, StorageConfig};
@@ -39,7 +39,7 @@ pub struct MyEvent {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = StorageConfig {
         encryption_enabled: true,
-        master_key: Some([0u8; 32]), // Provide a 32-byte master key
+        master_key: Some([0u8; 32]), // Secure 32-byte key
         ..Default::default()
     };
     let storage = Storage::open(config)?;
@@ -47,14 +47,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut writer = Writer::<MyEvent>::new(storage.clone());
     let reader = Reader::<MyEvent>::new(storage.clone());
 
-    // Append Event
-    let event = MyEvent { id: 1, data: "Hello".to_string() };
-    writer.append(1, 1, event)?;
+    // Append
+    writer.append(1, 1, MyEvent { id: 1, data: "Hello".to_string() })?;
 
-    // Read Event
+    // Read
     let txn = storage.env.read_txn()?;
-    if let Some(archived_event) = reader.get(&txn, 1)? {
-        println!("Read event: {:?}", archived_event);
+    if let Some(event) = reader.get(&txn, 1)? {
+        println!("Read event: {:?}", event);
     }
 
     Ok(())
@@ -115,21 +114,14 @@ graph TD
     Processor -->|Handle| User
 ```
 
--   **Storage Engine**: LMDB (via `heed` crate).
--   **Serialization**: `rkyv` (guaranteed zero-copy).
--   **Async Runtime**: `tokio`.
-
 ## Security
 
 ### Encryption at Rest
-VarveDB supports encryption at rest using AES-256-GCM.
-To enable it, set `encryption_enabled: true` in `StorageConfig` and provide a 32-byte `master_key`.
-
-The `master_key` is used to encrypt the per-stream keys stored in the database. This ensures that even if the database file is compromised, the data remains secure as long as the master key is protected.
-
-### Stream ID Leakage
-Note that while the event payload is encrypted, the **Stream ID** is currently stored in plaintext in the event header to allow for efficient indexing. This means an attacker with access to the raw database can see which streams are active and the volume of data they produce, but cannot read the content.
+VarveDB supports optional encryption at rest using **AES-256-GCM**.
+*   **Key Wrapping**: Per-stream keys are encrypted with a provided `master_key`.
+*   **AAD Binding**: Encryption is bound to `StreamID` + `Sequence` to prevent replay attacks.
+*   **Stream ID Leakage**: Stream IDs are stored in plaintext for indexing efficiency.
 
 ## License
 
-MIT
+MPL-2.0

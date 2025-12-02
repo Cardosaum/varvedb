@@ -14,18 +14,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let config = StorageConfig {
         path: dir.path().join("basic_example.mdb"),
-        map_size: 10 * 1024 * 1024,
-        max_dbs: 10,
-        create_dir: true,
-        encryption_enabled: false,
-        master_key: None,
+        ..Default::default()
     };
     let storage = Storage::open(config)?;
 
     let mut writer = Writer::<BasicEvent>::new(storage.clone());
     let reader = Reader::<BasicEvent>::new(storage.clone());
 
-    println!("Appending event...");
     writer.append(
         1,
         1,
@@ -33,8 +28,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             message: "Hello VarveDB!".to_string(),
         },
     )?;
+    println!("Appended event.");
 
-    println!("Reading event...");
     let txn = storage.env.read_txn()?;
     if let Some(event) = reader.get(&txn, 1)? {
         println!("Read event: {}", event.message);

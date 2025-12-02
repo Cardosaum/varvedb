@@ -96,11 +96,7 @@ fn test_disk_inspection() -> Result<(), Box<dyn std::error::Error>> {
     };
     writer.append(1, 1, event)?;
 
-    // Open as raw file or just read bytes via storage without decryption
-    // We can simulate "attacker" by using a Reader with encryption_enabled = false
-    // But Reader expects rkyv data.
-    // Instead, let's just inspect the bytes in events_log directly.
-
+    // Inspect raw bytes in events_log
     let txn = storage.env.read_txn()?;
     let bytes = storage.events_log.get(&txn, &1)?.unwrap();
 
