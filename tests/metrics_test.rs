@@ -1,0 +1,57 @@
+use varvedb::storage::{Storage, StorageConfig};
+use varvedb::engine::{Writer, Reader};
+use varvedb::metrics::VarveMetrics;
+use tempfile::tempdir;
+use rkyv::{Archive, Serialize, Deserialize};
+use prometheus::Registry;
+use std::sync::Arc;
+
+#[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
+#[archive(check_bytes)]
+#[repr(C)]
+pub struct MetricEvent {
+    pub id: u64,
+}
+
+#[test]
+fn test_metrics_collection() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempdir()?;
+    let config = StorageConfig {
+        path: dir.path().join("test_metrics.mdb"),
+        map_size: 10 * 1024 * 1024,
+        max_dbs: 10,
+        create_dir: true,
+    };
+
+    let storage = Storage::open(config)?;
+    
+    // Setup Metrics
+    let registry = Registry::new();
+    let metrics = Arc::new(VarveMetrics::new(&registry)?);
+    
+    let mut writer = Writer::<MetricEvent>::new(storage.clone()).with_metrics(metrics.clone());
+    let reader = Reader::<MetricEvent>::new(storage.clone()).with_metrics(metrics.clone());
+
+    // Write Event
+    let event = MetricEvent { id: 1 };
+    writer.append(1, 1, event)?;
+
+    // Read Event
+    let txn = storage.env.read_txn()?;
+    let _ = reader.get(&txn, 1)?;
+
+    // Verify Metrics
+    let metric_families = registry.gather();
+    
+    let events_appended = metric_families.iter()
+        .find(|m| m.get_name() == "varvedb_events_appended_total")
+        .expect("events_appended metric not found");
+    assert_eq!(events_appended.get_metric()[0].get_counter().get_value(), 1.0);
+
+    let events_read = metric_families.iter()
+        .find(|m| m.get_name() == "varvedb_events_read_total")
+        .expect("events_read metric not found");
+    assert_eq!(events_read.get_metric()[0].get_counter().get_value(), 1.0);
+
+    Ok(())
+}
