@@ -33,8 +33,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         map_size: 10 * 1024 * 1024,
         max_dbs: 10,
         create_dir: true,
-        encryption_enabled: true,     // Enable encryption
-        master_key: Some(master_key), // Provide the master key
+        encryption_enabled: true, // Enable encryption
+        master_key: Some(zeroize::Zeroizing::new(master_key)), // Provide the master key
     };
 
     println!("Opening encrypted storage at {:?}", db_path);
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_dbs: 10,
         create_dir: true,
         encryption_enabled: true,
-        master_key: Some(wrong_key),
+        master_key: Some(zeroize::Zeroizing::new(wrong_key)),
     };
 
     let attack_storage = Storage::open(attack_config)?;

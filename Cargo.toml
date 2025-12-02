@@ -15,6 +15,7 @@ rkyv = { version = "0.7.44", features = ["validation"] }
 thiserror = "1.0.57"
 tokio = { version = "1.36.0", features = ["full"] }
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
+zeroize = { version = "1.7", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3.10.0"

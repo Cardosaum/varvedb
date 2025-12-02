@@ -16,7 +16,7 @@
 //!
 //! ## Features
 //!
-//! *   **Zero-Copy Access**: Events are mapped directly from disk to memory, avoiding costly deserialization steps.
+//! *   **Zero-Copy Access**: Events are mapped directly from disk to memory, avoiding costly deserialization steps (when encryption is disabled).
 //! *   **Optimistic Concurrency**: Writes are guarded by stream versions, preventing race conditions in concurrent environments.
 //! *   **Reactive Interface**: Real-time event subscriptions via `tokio::watch`.
 //! *   **Authenticated Encryption**: Optional per-stream encryption (AES-256-GCM) with AAD binding to prevent tampering and replay attacks.

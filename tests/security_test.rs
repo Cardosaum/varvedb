@@ -25,7 +25,7 @@ fn test_master_key_encryption() -> Result<(), Box<dyn std::error::Error>> {
     let config = StorageConfig {
         path: dir.path().to_path_buf(),
         encryption_enabled: true,
-        master_key: Some(master_key),
+        master_key: Some(zeroize::Zeroizing::new(master_key)),
         ..Default::default()
     };
 
@@ -98,7 +98,7 @@ fn test_wrong_master_key_access() -> Result<(), Box<dyn std::error::Error>> {
     let config = StorageConfig {
         path: dir.path().to_path_buf(),
         encryption_enabled: true,
-        master_key: Some(master_key),
+        master_key: Some(zeroize::Zeroizing::new(master_key)),
         ..Default::default()
     };
     let storage = Storage::open(config.clone())?;
@@ -118,7 +118,7 @@ fn test_wrong_master_key_access() -> Result<(), Box<dyn std::error::Error>> {
     let attack_config = StorageConfig {
         path: dir.path().to_path_buf(),
         encryption_enabled: true,
-        master_key: Some(wrong_key),
+        master_key: Some(zeroize::Zeroizing::new(wrong_key)),
         ..Default::default()
     };
     let attack_storage = Storage::open(attack_config)?;

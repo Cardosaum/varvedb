@@ -26,6 +26,26 @@ pub enum Error {
     /// Validation error (e.g., concurrency conflict, invalid input).
     #[error("Validation error: {0}")]
     Validation(String),
+
+    /// Stream not found.
+    #[error("Stream not found: {0}")]
+    StreamNotFound(u128),
+
+    /// Version mismatch.
+    #[error("Version mismatch for stream {stream_id}: expected {expected}, got {actual}")]
+    VersionMismatch {
+        stream_id: u128,
+        expected: u32,
+        actual: u32,
+    },
+
+    /// Key not found.
+    #[error("Key not found for stream {0}")]
+    KeyNotFound(u128),
+
+    /// Concurrency conflict.
+    #[error("Concurrency conflict: Stream {stream_id} version {version} already exists")]
+    ConcurrencyConflict { stream_id: u128, version: u32 },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

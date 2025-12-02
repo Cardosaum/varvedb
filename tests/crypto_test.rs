@@ -27,7 +27,7 @@ fn test_crypto_shredding() -> Result<(), Box<dyn std::error::Error>> {
         max_dbs: 10,
         create_dir: true,
         encryption_enabled: true,
-        master_key: Some([1u8; 32]), // Use a dummy master key for crypto test
+        master_key: Some(zeroize::Zeroizing::new([1u8; 32])), // Use a dummy master key for crypto test
     };
 
     let storage = Storage::open(config)?;

@@ -43,7 +43,6 @@ use std::sync::Arc;
 /// ```
 pub struct Writer<E> {
     storage: Storage,
-    tx: tokio::sync::watch::Sender<u64>,
     metrics: Option<Arc<VarveMetrics>>,
     key_manager: Option<KeyManager>,
     _marker: std::marker::PhantomData<E>,
@@ -55,7 +54,6 @@ where
 {
     /// Creates a new `Writer` instance.
     pub fn new(storage: Storage) -> Self {
-        let (tx, _) = tokio::sync::watch::channel(0);
         let key_manager = if storage.config.encryption_enabled {
             Some(KeyManager::new(storage.clone()))
         } else {
@@ -64,7 +62,6 @@ where
 
         Self {
             storage,
-            tx,
             metrics: None,
             key_manager,
             _marker: std::marker::PhantomData,
@@ -79,9 +76,24 @@ where
 
     /// Returns a receiver for real-time event notifications.
     pub fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
-        self.tx.subscribe()
+        self.storage.notifier.subscribe()
     }
+}
 
+impl<E> Clone for Writer<E> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            metrics: self.metrics.clone(),
+            key_manager: self.key_manager.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+impl<E> Writer<E>
+where
+    E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<1024>>,
+{
     /// Appends a new event to a stream.
     ///
     /// This operation is atomic. If the `stream_id` and `version` combination already exists,
@@ -112,10 +124,21 @@ where
             .get(&txn, key_bytes.as_slice())?
             .is_some()
         {
-            return Err(crate::error::Error::Validation(format!(
-                "Concurrency conflict: Stream {} version {} already exists",
-                stream_id, version
-            )));
+            // We don't know the expected version here, but we know the current version exists.
+            // Actually, the error I defined `VersionMismatch` expects `expected` and `actual`.
+            // But here we just know that `version` already exists.
+            // Maybe I should add `StreamVersionExists` error?
+            // Or just use `VersionMismatch` with some assumption?
+            // The original code was: "Concurrency conflict: Stream {} version {} already exists"
+
+            // Let's check what I defined in error.rs:
+            // VersionMismatch { stream_id, expected, actual }
+
+            // If I am trying to write version V, and it exists, it means actual is >= V.
+            // But I don't know the head version without querying it.
+
+            // Let's add `ConcurrencyConflict` error to `error.rs` instead of reusing `VersionMismatch` incorrectly here.
+            return Err(crate::error::Error::ConcurrencyConflict { stream_id, version });
         }
 
         // Get next Global Sequence
@@ -164,7 +187,7 @@ where
         txn.commit()?;
 
         // Notify Subscribers
-        let _ = self.tx.send(new_seq);
+        let _ = self.storage.notifier.send(new_seq);
 
         // Metrics
         if let Some(metrics) = &self.metrics {
@@ -200,7 +223,7 @@ where
             EventData::Borrowed(b) => *b,
             EventData::Owned(b) => b.as_slice(),
         };
-        // Safety: We verify the bytes before creating EventView
+        // Safety: We verify the bytes in Reader::get using rkyv::check_archived_root
         unsafe { rkyv::archived_root::<E>(bytes) }
     }
 }
@@ -286,6 +309,12 @@ where
     /// Retrieves an event by its global sequence number.
     ///
     /// Returns an `EventView` which provides access to the deserialized event.
+    ///
+    /// # Zero-Copy vs Encryption
+    ///
+    /// *   **Encryption Disabled**: The `EventView` borrows data directly from the memory-mapped file (Zero-Copy).
+    /// *   **Encryption Enabled**: The data is decrypted into a temporary buffer, involving allocation and copying.
+    ///
     /// If encryption is enabled, this method handles key retrieval and decryption transparently.
     ///
     /// # Errors
@@ -312,12 +341,9 @@ where
                     let (stream_id_bytes, rest) = bytes.split_at(16);
                     let stream_id = u128::from_be_bytes(stream_id_bytes.try_into().unwrap());
 
-                    let key = km.get_key_with_txn(txn, stream_id)?.ok_or_else(|| {
-                        crate::error::Error::Validation(format!(
-                            "Key not found for stream {}",
-                            stream_id
-                        ))
-                    })?;
+                    let key = km
+                        .get_key_with_txn(txn, stream_id)?
+                        .ok_or_else(|| crate::error::Error::KeyNotFound(stream_id))?;
 
                     // AAD: StreamID + Seq
                     let mut aad = Vec::with_capacity(24);
@@ -330,14 +356,17 @@ where
                     EventData::Borrowed(bytes)
                 };
 
+                // Verify rkyv validity (zero-copy check)
+                rkyv::check_archived_root::<E>(match &data {
+                    EventData::Borrowed(b) => b,
+                    EventData::Owned(b) => b.as_slice(),
+                })
+                .map_err(|e| crate::error::Error::Validation(e.to_string()))?;
+
                 let view = EventView {
                     data,
                     _marker: std::marker::PhantomData,
                 };
-
-                // Verify rkyv validity (zero-copy check)
-                // Note: This derefs the view which calls check_archived_root
-                let _ = *view;
 
                 if let Some(metrics) = &self.metrics {
                     metrics.events_read.inc();
@@ -387,11 +416,30 @@ where
 ///     }
 /// }
 /// ```
+/// Configuration for the event processor.
+#[derive(Clone, Copy, Debug)]
+pub struct ProcessorConfig {
+    /// Maximum number of events to process before committing the cursor.
+    pub batch_size: usize,
+    /// Maximum time to wait before committing the cursor, even if batch_size is not reached.
+    pub batch_timeout: std::time::Duration,
+}
+
+impl Default for ProcessorConfig {
+    fn default() -> Self {
+        Self {
+            batch_size: 100,
+            batch_timeout: std::time::Duration::from_millis(100),
+        }
+    }
+}
+
 pub struct Processor<E, H> {
     reader: Reader<E>,
     handler: H,
     consumer_id: u64,
     rx: tokio::sync::watch::Receiver<u64>,
+    config: ProcessorConfig,
 }
 
 impl<E, H> Processor<E, H>
@@ -419,7 +467,14 @@ where
             handler,
             consumer_id,
             rx,
+            config: ProcessorConfig::default(),
         }
+    }
+
+    /// Sets the configuration for the processor.
+    pub fn with_config(mut self, config: ProcessorConfig) -> Self {
+        self.config = config;
+        self
     }
 
     /// Starts the event processing loop.
@@ -433,40 +488,27 @@ where
     /// *   The event handler returns an error.
     /// *   The event notification channel is closed.
     pub async fn run(&mut self) -> crate::error::Result<()> {
-        loop {
-            // Get current cursor
-            let current_seq = {
-                let txn = self.reader.storage.env.read_txn()?;
-                self.reader
-                    .storage
-                    .consumer_cursors
-                    .get(&txn, &self.consumer_id)?
-                    .unwrap_or(0)
-            };
+        // Initial cursor load
+        let mut current_seq = {
+            let txn = self.reader.storage.env.read_txn()?;
+            self.reader
+                .storage
+                .consumer_cursors
+                .get(&txn, &self.consumer_id)?
+                .unwrap_or(0)
+        };
 
-            // Check head
+        loop {
             let head_seq = *self.rx.borrow();
 
             if current_seq < head_seq {
-                // Catch up mode
-                let txn = self.reader.storage.env.read_txn()?;
+                // Synchronously process the backlog to ensure RoTxn is not held across await
+                current_seq = self.process_backlog(current_seq, head_seq)?;
+            }
 
-                let next_seq = current_seq + 1;
-                if let Some(event) = self.reader.get(&txn, next_seq)? {
-                    self.handler.handle(&event)?;
-                }
-
-                drop(txn); // Drop read txn
-
-                let mut wtxn = self.reader.storage.env.write_txn()?;
-                self.reader.storage.consumer_cursors.put(
-                    &mut wtxn,
-                    &self.consumer_id,
-                    &next_seq,
-                )?;
-                wtxn.commit()?;
-            } else {
-                // Wait mode
+            // Check if we are caught up
+            if current_seq >= *self.rx.borrow() {
+                // Wait for new events
                 self.rx.changed().await.map_err(|_| {
                     crate::error::Error::Io(std::io::Error::new(
                         std::io::ErrorKind::BrokenPipe,
@@ -475,5 +517,77 @@ where
                 })?;
             }
         }
+    }
+
+    /// Processes events from current_seq to target_seq using batched transactions.
+    /// This method is synchronous to ensure RoTxn is not held across await points.
+    fn process_backlog(
+        &mut self,
+        mut current_seq: u64,
+        target_seq: u64,
+    ) -> crate::error::Result<u64> {
+        let mut pending_updates = 0;
+        let mut last_commit = std::time::Instant::now();
+        let mut read_txn: Option<heed::RoTxn> = None;
+
+        while current_seq < target_seq {
+            // Ensure we have a read transaction
+            if read_txn.is_none() {
+                read_txn = Some(self.reader.storage.env.read_txn()?);
+            }
+            let txn = read_txn.as_ref().unwrap();
+
+            let mut processed_any = false;
+            let mut reached_snapshot_end = false;
+
+            // Inner loop: process batch
+            while current_seq < target_seq {
+                let next_seq = current_seq + 1;
+                if let Some(event) = self.reader.get(txn, next_seq)? {
+                    self.handler.handle(&event)?;
+                    current_seq = next_seq;
+                    pending_updates += 1;
+                    processed_any = true;
+                } else {
+                    reached_snapshot_end = true;
+                    break;
+                }
+
+                if pending_updates >= self.config.batch_size {
+                    break;
+                }
+            }
+
+            // Commit if needed
+            if pending_updates >= self.config.batch_size
+                || (processed_any && last_commit.elapsed() >= self.config.batch_timeout)
+            {
+                let mut wtxn = self.reader.storage.env.write_txn()?;
+                self.reader.storage.consumer_cursors.put(
+                    &mut wtxn,
+                    &self.consumer_id,
+                    &current_seq,
+                )?;
+                wtxn.commit()?;
+                pending_updates = 0;
+                last_commit = std::time::Instant::now();
+            }
+
+            if reached_snapshot_end {
+                read_txn = None;
+            }
+        }
+
+        // Final commit if any pending updates remain
+        if pending_updates > 0 {
+            let mut wtxn = self.reader.storage.env.write_txn()?;
+            self.reader
+                .storage
+                .consumer_cursors
+                .put(&mut wtxn, &self.consumer_id, &current_seq)?;
+            wtxn.commit()?;
+        }
+
+        Ok(current_seq)
     }
 }

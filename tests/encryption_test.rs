@@ -24,7 +24,7 @@ fn test_encryption_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let config = StorageConfig {
         path: dir.path().to_path_buf(),
         encryption_enabled: true,
-        master_key: Some([1u8; 32]),
+        master_key: Some(zeroize::Zeroizing::new([1u8; 32])),
         ..Default::default()
     };
     let storage = Storage::open(config.clone())?;
@@ -53,7 +53,7 @@ fn test_aad_integrity() -> Result<(), Box<dyn std::error::Error>> {
     let config = StorageConfig {
         path: dir.path().to_path_buf(),
         encryption_enabled: true,
-        master_key: Some([1u8; 32]),
+        master_key: Some(zeroize::Zeroizing::new([1u8; 32])),
         ..Default::default()
     };
     let storage = Storage::open(config.clone())?;
@@ -92,7 +92,7 @@ fn test_disk_inspection() -> Result<(), Box<dyn std::error::Error>> {
     let config = StorageConfig {
         path: dir.path().to_path_buf(),
         encryption_enabled: true,
-        master_key: Some([1u8; 32]),
+        master_key: Some(zeroize::Zeroizing::new([1u8; 32])),
         ..Default::default()
     };
     let storage = Storage::open(config.clone())?;

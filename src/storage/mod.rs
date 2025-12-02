@@ -71,7 +71,7 @@ pub struct StorageConfig {
     ///
     /// Required if `encryption_enabled` is true. This key should be 32 bytes (256 bits) and
     /// must be kept secure. Losing this key will render the database unreadable.
-    pub master_key: Option<[u8; 32]>,
+    pub master_key: Option<zeroize::Zeroizing<[u8; 32]>>,
 }
 
 impl Default for StorageConfig {
@@ -107,12 +107,37 @@ pub struct Storage {
     pub keystore: KeyStoreDb,
     /// The configuration used to open this storage.
     pub config: StorageConfig,
+    /// Shared notification channel for new events.
+    pub notifier: std::sync::Arc<tokio::sync::watch::Sender<u64>>,
+    /// Receiver for the shared notification channel (kept alive to prevent channel closure).
+    pub notifier_rx: tokio::sync::watch::Receiver<u64>,
 }
 
 impl Storage {
     pub fn open(config: StorageConfig) -> Result<Self> {
         if config.create_dir {
             std::fs::create_dir_all(&config.path)?;
+        }
+
+        if config.map_size == 0 {
+            return Err(crate::error::Error::Validation(
+                "map_size must be greater than 0".to_string(),
+            ));
+        }
+
+        if config.max_dbs < 4 {
+            return Err(crate::error::Error::Validation(
+                "max_dbs must be at least 4".to_string(),
+            ));
+        }
+
+        #[cfg(target_pointer_width = "32")]
+        {
+            if config.map_size > 3 * 1024 * 1024 * 1024 {
+                return Err(crate::error::Error::Validation(
+                    "map_size exceeds 3GB limit for 32-bit systems".to_string(),
+                ));
+            }
         }
 
         let env = unsafe {
@@ -129,6 +154,9 @@ impl Storage {
         let keystore = env.create_database(&mut txn, Some("keystore"))?;
         txn.commit()?;
 
+        let (tx, rx) = tokio::sync::watch::channel(0);
+        let notifier = std::sync::Arc::new(tx);
+
         Ok(Self {
             env,
             events_log,
@@ -136,6 +164,8 @@ impl Storage {
             consumer_cursors,
             keystore,
             config,
+            notifier,
+            notifier_rx: rx,
         })
     }
 }

@@ -11,7 +11,9 @@ use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Key, Nonce,
 };
+use rand::rngs::OsRng;
 use rand::RngCore;
+use zeroize::Zeroizing;
 
 /// Manages the lifecycle of encryption keys.
 ///
@@ -36,7 +38,7 @@ use rand::RngCore;
 /// let config = StorageConfig {
 ///     path: dir.path().to_path_buf(),
 ///     encryption_enabled: true,
-///     master_key: Some([0u8; 32]),
+///     master_key: Some(zeroize::Zeroizing::new([0u8; 32])),
 ///     ..Default::default()
 /// };
 /// let storage = Storage::open(config)?;
@@ -48,6 +50,7 @@ use rand::RngCore;
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct KeyManager {
     storage: Storage,
 }
@@ -59,12 +62,14 @@ impl KeyManager {
     }
 
     fn get_master_key(&self) -> crate::error::Result<&[u8; 32]> {
-        self.storage.config.master_key.as_ref().ok_or_else(|| {
-            crate::error::Error::Validation("Master key required for encryption".to_string())
-        })
+        self.storage
+            .config
+            .master_key
+            .as_deref()
+            .ok_or_else(|| crate::error::Error::KeyNotFound(0)) // 0 for master key
     }
 
-    pub fn get_or_create_key(&self, stream_id: u128) -> crate::error::Result<[u8; 32]> {
+    pub fn get_or_create_key(&self, stream_id: u128) -> crate::error::Result<Zeroizing<[u8; 32]>> {
         let mut txn = self.storage.env.write_txn()?;
         let key = self.get_or_create_key_with_txn(&mut txn, stream_id)?;
         txn.commit()?;
@@ -75,7 +80,7 @@ impl KeyManager {
         &self,
         txn: &mut heed::RwTxn,
         stream_id: u128,
-    ) -> crate::error::Result<[u8; 32]> {
+    ) -> crate::error::Result<Zeroizing<[u8; 32]>> {
         match self.storage.keystore.get(txn, &stream_id)? {
             Some(encrypted_key_bytes) => {
                 // Decrypt existing key
@@ -83,7 +88,7 @@ impl KeyManager {
                 let aad = stream_id.to_be_bytes(); // Bind key to StreamID
                 let plaintext_key_vec = decrypt(master_key, encrypted_key_bytes, &aad)?;
 
-                let mut key = [0u8; 32];
+                let mut key = Zeroizing::new([0u8; 32]);
                 if plaintext_key_vec.len() != 32 {
                     return Err(crate::error::Error::Validation(
                         "Invalid decrypted key length".to_string(),
@@ -94,13 +99,13 @@ impl KeyManager {
             }
             None => {
                 // Generate new key
-                let mut key = [0u8; 32];
-                rand::thread_rng().fill_bytes(&mut key);
+                let mut key = Zeroizing::new([0u8; 32]);
+                OsRng.fill_bytes(&mut *key);
 
                 // Encrypt with Master Key
                 let master_key = self.get_master_key()?;
                 let aad = stream_id.to_be_bytes();
-                let encrypted_key = encrypt(master_key, &key, &aad)?;
+                let encrypted_key = encrypt(master_key, &*key, &aad)?;
 
                 self.storage.keystore.put(txn, &stream_id, &encrypted_key)?;
                 Ok(key)
@@ -108,7 +113,7 @@ impl KeyManager {
         }
     }
 
-    pub fn get_key(&self, stream_id: u128) -> crate::error::Result<Option<[u8; 32]>> {
+    pub fn get_key(&self, stream_id: u128) -> crate::error::Result<Option<Zeroizing<[u8; 32]>>> {
         let txn = self.storage.env.read_txn()?;
         self.get_key_with_txn(&txn, stream_id)
     }
@@ -117,14 +122,14 @@ impl KeyManager {
         &self,
         txn: &heed::RoTxn,
         stream_id: u128,
-    ) -> crate::error::Result<Option<[u8; 32]>> {
+    ) -> crate::error::Result<Option<Zeroizing<[u8; 32]>>> {
         match self.storage.keystore.get(txn, &stream_id)? {
             Some(encrypted_key_bytes) => {
                 let master_key = self.get_master_key()?;
                 let aad = stream_id.to_be_bytes();
                 let plaintext_key_vec = decrypt(master_key, encrypted_key_bytes, &aad)?;
 
-                let mut key = [0u8; 32];
+                let mut key = Zeroizing::new([0u8; 32]);
                 if plaintext_key_vec.len() != 32 {
                     return Err(crate::error::Error::Validation(
                         "Invalid decrypted key length".to_string(),
@@ -169,7 +174,7 @@ impl KeyManager {
 pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let mut nonce_bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let payload = Payload {
