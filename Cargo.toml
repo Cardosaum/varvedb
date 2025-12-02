@@ -9,7 +9,7 @@ aes-gcm = "0.10.3"
 bytemuck = "1.14.3"
 bytes = "1.5.0"
 heed = "0.20.5"
-prometheus = "0.13.3"
+prometheus = "0.14.0"
 rand = "0.8.5"
 rkyv = { version = "0.7.44", features = ["validation"] }
 thiserror = "1.0.57"
