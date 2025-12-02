@@ -7,6 +7,30 @@ use std::sync::Arc;
 ///
 /// It ensures concurrency control via optimistic locking on `(stream_id, version)`
 /// and notifies subscribers of new events.
+///
+/// # Example
+///
+/// ```rust
+/// use varvedb::engine::Writer;
+/// use varvedb::storage::{Storage, StorageConfig};
+/// use rkyv::{Archive, Serialize, Deserialize};
+/// use tempfile::tempdir;
+///
+/// #[derive(Archive, Serialize, Deserialize, Debug)]
+/// #[archive(check_bytes)]
+/// #[archive_attr(derive(Debug))]
+/// struct MyEvent { pub data: u32 }
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let dir = tempdir()?;
+/// let config = StorageConfig { path: dir.path().to_path_buf(), ..Default::default() };
+/// let storage = Storage::open(config)?;
+/// let mut writer = Writer::new(storage);
+///
+/// writer.append(1, 1, MyEvent { data: 42 })?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct Writer<E> {
     storage: Storage,
     tx: tokio::sync::watch::Sender<u64>,
@@ -99,7 +123,36 @@ where
 
 /// The `Reader` struct provides zero-copy access to events.
 ///
-/// It uses `rkyv` to validate and read events directly from the memory-mapped file.
+/// It wraps the storage handle and provides methods to retrieve events by sequence number.
+///
+/// # Example
+///
+/// ```rust
+/// use varvedb::engine::{Writer, Reader};
+/// use varvedb::storage::{Storage, StorageConfig};
+/// use rkyv::{Archive, Serialize, Deserialize};
+/// use tempfile::tempdir;
+///
+/// #[derive(Archive, Serialize, Deserialize, Debug)]
+/// #[archive(check_bytes)]
+/// #[archive_attr(derive(Debug))]
+/// struct MyEvent { pub data: u32 }
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let dir = tempdir()?;
+/// let config = StorageConfig { path: dir.path().to_path_buf(), ..Default::default() };
+/// let storage = Storage::open(config)?;
+/// let mut writer = Writer::new(storage.clone());
+/// writer.append(1, 1, MyEvent { data: 42 })?;
+///
+/// let reader = Reader::<MyEvent>::new(storage.clone());
+/// let txn = storage.env.read_txn()?;
+/// if let Some(event) = reader.get(&txn, 1)? {
+///     println!("Event: {:?}", event);
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub struct Reader<E> {
     storage: Storage,
     metrics: Option<Arc<VarveMetrics>>,
@@ -153,6 +206,34 @@ where
     fn handle(&mut self, event: &E::Archived) -> crate::error::Result<()>;
 }
 
+/// The `Processor` struct manages a reactive event loop.
+///
+/// It subscribes to new event notifications and processes them sequentially using the provided `EventHandler`.
+/// It automatically manages the consumer cursor, ensuring at-least-once processing.
+///
+/// # Example
+///
+/// ```rust
+/// use varvedb::engine::EventHandler;
+/// use varvedb::storage::{Storage, StorageConfig};
+/// use rkyv::{Archive, Serialize, Deserialize};
+/// use tempfile::tempdir;
+/// use std::sync::{Arc, Mutex};
+///
+/// #[derive(Archive, Serialize, Deserialize, Debug)]
+/// #[archive(check_bytes)]
+/// #[archive_attr(derive(Debug))]
+/// struct MyEvent { pub data: u32 }
+///
+/// struct MyHandler { count: Arc<Mutex<u32>> }
+/// impl EventHandler<MyEvent> for MyHandler {
+///     fn handle(&mut self, event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
+///         let mut count = self.count.lock().unwrap();
+///         *count += event.data;
+///         Ok(())
+///     }
+/// }
+/// ```
 pub struct Processor<E, H> {
     reader: Reader<E>,
     handler: H,

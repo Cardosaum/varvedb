@@ -32,7 +32,7 @@ fn test_crypto_shredding() -> Result<(), Box<dyn std::error::Error>> {
         secret_data: vec![0xDE, 0xAD, 0xBE, 0xEF],
     };
     let event_bytes = rkyv::to_bytes::<_, 1024>(&event)?;
-    let encrypted_payload = encrypt(&key, &event_bytes)?;
+    let encrypted_payload = encrypt(&key, &event_bytes, &[])?;
 
     // 3. Store (Simulating storing EncryptedEvent wrapper)
     // In a real scenario, the user would define an EncryptedEvent struct
@@ -40,7 +40,7 @@ fn test_crypto_shredding() -> Result<(), Box<dyn std::error::Error>> {
     // For this test, we just verify we can decrypt it.
 
     // 4. Decrypt
-    let decrypted_bytes = decrypt(&key, &encrypted_payload)?;
+    let decrypted_bytes = decrypt(&key, &encrypted_payload, &[])?;
     let decrypted_event = rkyv::check_archived_root::<SecretEvent>(&decrypted_bytes).unwrap();
 
     assert_eq!(
@@ -57,7 +57,7 @@ fn test_crypto_shredding() -> Result<(), Box<dyn std::error::Error>> {
     let new_key = key_manager.get_or_create_key(stream_id)?; // New random key
     assert_ne!(key, new_key);
 
-    let result = decrypt(&new_key, &encrypted_payload);
+    let result = decrypt(&new_key, &encrypted_payload, &[]);
     assert!(result.is_err());
 
     Ok(())

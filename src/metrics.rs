@@ -1,5 +1,14 @@
 use prometheus::{Histogram, IntCounter, Registry};
 
+/// Prometheus metrics for VarveDB.
+///
+/// Tracks write latency, read latency, and event counts.
+///
+/// # Metrics
+/// - `varvedb_write_duration_seconds`: Histogram of write latency.
+/// - `varvedb_read_duration_seconds`: Histogram of read latency.
+/// - `varvedb_events_written_total`: Counter of total events written.
+#[derive(Clone)]
 pub struct VarveMetrics {
     pub events_appended: IntCounter,
     pub bytes_written: IntCounter,

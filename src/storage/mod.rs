@@ -29,9 +29,13 @@ impl StreamKey {
 /// Configuration for opening a VarveDB storage environment.
 #[derive(Clone)]
 pub struct StorageConfig {
+    /// Path to the LMDB environment directory or file.
     pub path: PathBuf,
+    /// Maximum size of the memory map in bytes (default: 10TB).
     pub map_size: usize,
+    /// Maximum number of named databases (default: 10).
     pub max_dbs: u32,
+    /// Whether to create the directory if it doesn't exist (default: true).
     pub create_dir: bool,
 }
 
@@ -46,13 +50,21 @@ impl Default for StorageConfig {
     }
 }
 
+/// The main storage handle holding the LMDB environment and database handles.
+///
+/// This struct is cheap to clone (Arc-like semantics via `heed::Env`).
 #[derive(Clone)]
 pub struct Storage {
+    /// Underlying LMDB environment.
     pub env: Env,
     // Buckets
+    /// Maps Global Sequence Number (u64) -> Event Bytes.
     pub events_log: EventLogDb,
+    /// Maps Stream ID + Version -> Global Sequence Number.
     pub stream_index: StreamIndexDb, // Key: StreamID+Ver (16+4 bytes)
+    /// Maps Consumer ID -> Last Processed Global Sequence Number.
     pub consumer_cursors: ConsumerCursorDb,
+    /// Maps Stream ID -> Encryption Key (32 bytes).
     pub keystore: KeyStoreDb,
 }
 
