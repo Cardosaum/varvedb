@@ -18,7 +18,7 @@ fn read_benchmark(c: &mut Criterion) {
         path: dir.path().join("bench_read.mdb"),
         map_size: 10 * 1024 * 1024 * 1024,
         max_dbs: 10,
-        create_dir: true,
+        create_dir: true, encryption_enabled: false,
     };
     let storage = Storage::open(config).unwrap();
     let mut writer = Writer::<BenchEvent>::new(storage.clone());

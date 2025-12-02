@@ -24,7 +24,7 @@ proptest! {
             path: dir.path().join("prop_test.mdb"),
             map_size: 10 * 1024 * 1024,
             max_dbs: 10,
-            create_dir: true,
+            create_dir: true, encryption_enabled: false,
         };
         let storage = Storage::open(config).unwrap();
         let mut writer = Writer::<PropEvent>::new(storage.clone());
@@ -49,7 +49,7 @@ proptest! {
             path: dir.path().join("prop_seq.mdb"),
             map_size: 10 * 1024 * 1024,
             max_dbs: 10,
-            create_dir: true,
+            create_dir: true, encryption_enabled: false,
         };
         let storage = Storage::open(config).unwrap();
         let mut writer = Writer::<PropEvent>::new(storage.clone());

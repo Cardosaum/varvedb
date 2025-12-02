@@ -1,7 +1,7 @@
 use crate::storage::Storage;
 use aes_gcm::{
-    Aes256Gcm, Key, Nonce,
     aead::{Aead, KeyInit, Payload},
+    Aes256Gcm, Key, Nonce,
 };
 use rand::RngCore;
 
@@ -39,21 +39,48 @@ impl KeyManager {
 
     pub fn get_or_create_key(&self, stream_id: u128) -> crate::error::Result<[u8; 32]> {
         let mut txn = self.storage.env.write_txn()?;
+        let key = self.get_or_create_key_with_txn(&mut txn, stream_id)?;
+        txn.commit()?;
+        Ok(key)
+    }
 
-        match self.storage.keystore.get(&txn, &stream_id)? {
+    pub fn get_or_create_key_with_txn(
+        &self,
+        txn: &mut heed::RwTxn,
+        stream_id: u128,
+    ) -> crate::error::Result<[u8; 32]> {
+        match self.storage.keystore.get(txn, &stream_id)? {
             Some(key_bytes) => {
                 let mut key = [0u8; 32];
                 key.copy_from_slice(key_bytes);
-                txn.commit()?;
                 Ok(key)
             }
             None => {
                 let mut key = [0u8; 32];
                 rand::thread_rng().fill_bytes(&mut key);
-                self.storage.keystore.put(&mut txn, &stream_id, &key)?;
-                txn.commit()?;
+                self.storage.keystore.put(txn, &stream_id, &key)?;
                 Ok(key)
             }
+        }
+    }
+
+    pub fn get_key(&self, stream_id: u128) -> crate::error::Result<Option<[u8; 32]>> {
+        let txn = self.storage.env.read_txn()?;
+        self.get_key_with_txn(&txn, stream_id)
+    }
+
+    pub fn get_key_with_txn(
+        &self,
+        txn: &heed::RoTxn,
+        stream_id: u128,
+    ) -> crate::error::Result<Option<[u8; 32]>> {
+        match self.storage.keystore.get(txn, &stream_id)? {
+            Some(key_bytes) => {
+                let mut key = [0u8; 32];
+                key.copy_from_slice(key_bytes);
+                Ok(Some(key))
+            }
+            None => Ok(None),
         }
     }
 
@@ -67,7 +94,19 @@ impl KeyManager {
 
 /// Encrypts plaintext using AES-256-GCM.
 ///
-/// Returns a vector containing the 12-byte nonce followed by the ciphertext.
+/// # Arguments
+/// * `key` - The 32-byte encryption key.
+/// * `plaintext` - The data to encrypt.
+/// * `aad` - **Additional Authenticated Data**. This data is not encrypted but is authenticated.
+///   It ensures that the ciphertext is "bound" to this specific context.
+///   If `aad` is modified, decryption will fail.
+///
+/// # Returns
+/// Returns a `Vec<u8>` containing:
+/// 1. **Nonce (12 bytes)**: A random value unique to this encryption. Required for security.
+/// 2. **Ciphertext**: The encrypted data.
+///
+/// We prepend the nonce to the ciphertext so it can be retrieved for decryption.
 pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let mut nonce_bytes = [0u8; 12];
@@ -91,7 +130,11 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Re
 
 /// Decrypts ciphertext using AES-256-GCM.
 ///
-/// Expects the input to start with a 12-byte nonce.
+/// # Arguments
+/// * `key` - The 32-byte encryption key.
+/// * `ciphertext_with_nonce` - The byte slice containing the 12-byte Nonce followed by the Ciphertext.
+/// * `aad` - The **Additional Authenticated Data** used during encryption.
+///   Must match exactly what was passed to `encrypt`, otherwise decryption fails.
 pub fn decrypt(
     key: &[u8; 32],
     ciphertext_with_nonce: &[u8],

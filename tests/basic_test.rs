@@ -29,6 +29,7 @@ fn test_basic_write_read() -> Result<(), Box<dyn std::error::Error>> {
         map_size: 10 * 1024 * 1024, // 10MB
         max_dbs: 10,
         create_dir: true,
+        encryption_enabled: false,
     };
 
     let storage = Storage::open(config)?;
@@ -51,7 +52,7 @@ fn test_basic_write_read() -> Result<(), Box<dyn std::error::Error>> {
     assert!(fetched.is_some());
 
     let event = fetched.unwrap();
-    match event {
+    match &*event {
         rkyv::Archived::<SystemEvent>::V1(v1) => {
             assert_eq!(v1.stream_id, 1);
             assert_eq!(v1.kind, 100);

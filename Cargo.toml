@@ -35,3 +35,7 @@ harness = false
 [[bench]]
 name = "payload_bench"
 harness = false
+
+[[bench]]
+name = "encryption_bench"
+harness = false

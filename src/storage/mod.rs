@@ -1,5 +1,5 @@
 use crate::error::Result;
-use heed::{Database, Env, EnvOpenOptions, types::*};
+use heed::{types::*, Database, Env, EnvOpenOptions};
 use std::path::PathBuf;
 
 // Type Aliases for readability
@@ -37,6 +37,8 @@ pub struct StorageConfig {
     pub max_dbs: u32,
     /// Whether to create the directory if it doesn't exist (default: true).
     pub create_dir: bool,
+    /// Whether to enable encryption at rest (default: false).
+    pub encryption_enabled: bool,
 }
 
 impl Default for StorageConfig {
@@ -46,6 +48,7 @@ impl Default for StorageConfig {
             map_size: 10 * 1024 * 1024 * 1024, // 10TB
             max_dbs: 10,
             create_dir: true,
+            encryption_enabled: false,
         }
     }
 }
@@ -66,6 +69,8 @@ pub struct Storage {
     pub consumer_cursors: ConsumerCursorDb,
     /// Maps Stream ID -> Encryption Key (32 bytes).
     pub keystore: KeyStoreDb,
+    /// Configuration used to open this storage.
+    pub config: StorageConfig,
 }
 
 impl Storage {
@@ -94,6 +99,7 @@ impl Storage {
             stream_index,
             consumer_cursors,
             keystore,
+            config,
         })
     }
 }

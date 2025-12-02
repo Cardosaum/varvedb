@@ -34,7 +34,7 @@ async fn test_processor_reactive() -> Result<(), Box<dyn std::error::Error>> {
         path: dir.path().join("test_reactive.mdb"),
         map_size: 10 * 1024 * 1024,
         max_dbs: 10,
-        create_dir: true,
+        create_dir: true, encryption_enabled: false,
     };
 
     let storage = Storage::open(config)?;

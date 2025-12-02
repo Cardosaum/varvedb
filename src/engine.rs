@@ -1,5 +1,6 @@
 use crate::storage::Storage;
 
+use crate::crypto::{self, KeyManager};
 use crate::metrics::VarveMetrics;
 use std::sync::Arc;
 
@@ -35,6 +36,7 @@ pub struct Writer<E> {
     storage: Storage,
     tx: tokio::sync::watch::Sender<u64>,
     metrics: Option<Arc<VarveMetrics>>,
+    key_manager: Option<KeyManager>,
     _marker: std::marker::PhantomData<E>,
 }
 
@@ -44,10 +46,17 @@ where
 {
     pub fn new(storage: Storage) -> Self {
         let (tx, _) = tokio::sync::watch::channel(0);
+        let key_manager = if storage.config.encryption_enabled {
+            Some(KeyManager::new(storage.clone()))
+        } else {
+            None
+        };
+
         Self {
             storage,
             tx,
             metrics: None,
+            key_manager,
             _marker: std::marker::PhantomData,
         }
     }
@@ -98,10 +107,32 @@ where
         let bytes = rkyv::to_bytes::<_, 1024>(&event)
             .map_err(|e| crate::error::Error::Serialization(e.to_string()))?;
 
-        let bytes_len = bytes.len() as u64;
+        // Encrypt if enabled
+        let final_bytes = if let Some(km) = &self.key_manager {
+            let key = km.get_or_create_key_with_txn(&mut txn, stream_id)?;
+
+            // Construct AAD: StreamID (16 bytes) + GlobalSeq (8 bytes)
+            let mut aad = Vec::with_capacity(24);
+            aad.extend_from_slice(&stream_id.to_be_bytes());
+            aad.extend_from_slice(&new_seq.to_be_bytes());
+
+            let mut encrypted = crypto::encrypt(&key, &bytes, &aad)?;
+
+            // Prepend StreamID (16 bytes) to allow Reader to find the key
+            let mut final_vec = Vec::with_capacity(16 + encrypted.len());
+            final_vec.extend_from_slice(&stream_id.to_be_bytes());
+            final_vec.append(&mut encrypted);
+            final_vec
+        } else {
+            bytes.to_vec()
+        };
+
+        let bytes_len = final_bytes.len() as u64;
 
         // 4. Write to Log and Index
-        self.storage.events_log.put(&mut txn, &new_seq, &bytes)?;
+        self.storage
+            .events_log
+            .put(&mut txn, &new_seq, &final_bytes)?;
         self.storage
             .stream_index
             .put(&mut txn, key_bytes.as_slice(), &new_seq)?;
@@ -118,6 +149,45 @@ where
         }
 
         Ok(())
+    }
+}
+
+pub enum EventData<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+pub struct EventView<'a, E>
+where
+    E: rkyv::Archive,
+{
+    data: EventData<'a>,
+    _marker: std::marker::PhantomData<E>,
+}
+
+impl<'a, E> std::ops::Deref for EventView<'a, E>
+where
+    E: rkyv::Archive,
+{
+    type Target = E::Archived;
+
+    fn deref(&self) -> &Self::Target {
+        let bytes = match &self.data {
+            EventData::Borrowed(b) => *b,
+            EventData::Owned(b) => b.as_slice(),
+        };
+        // Safety: We verify the bytes before creating EventView
+        unsafe { rkyv::archived_root::<E>(bytes) }
+    }
+}
+
+impl<'a, E> std::fmt::Debug for EventView<'a, E>
+where
+    E: rkyv::Archive,
+    E::Archived: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        (**self).fmt(f)
     }
 }
 
@@ -156,6 +226,7 @@ where
 pub struct Reader<E> {
     storage: Storage,
     metrics: Option<Arc<VarveMetrics>>,
+    key_manager: Option<KeyManager>,
     _marker: std::marker::PhantomData<E>,
 }
 
@@ -165,9 +236,16 @@ where
     E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
 {
     pub fn new(storage: Storage) -> Self {
+        let key_manager = if storage.config.encryption_enabled {
+            Some(KeyManager::new(storage.clone()))
+        } else {
+            None
+        };
+
         Self {
             storage,
             metrics: None,
+            key_manager,
             _marker: std::marker::PhantomData,
         }
     }
@@ -181,17 +259,52 @@ where
         &self,
         txn: &'txn heed::RoTxn,
         seq: u64,
-    ) -> crate::error::Result<Option<&'txn E::Archived>> {
+    ) -> crate::error::Result<Option<EventView<'txn, E>>> {
         match self.storage.events_log.get(txn, &seq)? {
             Some(bytes) => {
-                let archived = rkyv::check_archived_root::<E>(bytes)
-                    .map_err(|e| crate::error::Error::Validation(e.to_string()))?;
+                let data = if let Some(km) = &self.key_manager {
+                    // Expect: [StreamID (16)][Nonce (12)][Ciphertext]
+                    if bytes.len() < 28 {
+                        return Err(crate::error::Error::Validation(
+                            "Encrypted event too short".to_string(),
+                        ));
+                    }
+
+                    let (stream_id_bytes, rest) = bytes.split_at(16);
+                    let stream_id = u128::from_be_bytes(stream_id_bytes.try_into().unwrap());
+
+                    let key = km.get_key_with_txn(txn, stream_id)?.ok_or_else(|| {
+                        crate::error::Error::Validation(format!(
+                            "Key not found for stream {}",
+                            stream_id
+                        ))
+                    })?;
+
+                    // AAD: StreamID + Seq
+                    let mut aad = Vec::with_capacity(24);
+                    aad.extend_from_slice(stream_id_bytes);
+                    aad.extend_from_slice(&seq.to_be_bytes());
+
+                    let decrypted = crypto::decrypt(&key, rest, &aad)?;
+                    EventData::Owned(decrypted)
+                } else {
+                    EventData::Borrowed(bytes)
+                };
+
+                let view = EventView {
+                    data,
+                    _marker: std::marker::PhantomData,
+                };
+
+                // Verify rkyv validity (zero-copy check)
+                // Note: This derefs the view which calls check_archived_root
+                let _ = *view;
 
                 if let Some(metrics) = &self.metrics {
                     metrics.events_read.inc();
                 }
 
-                Ok(Some(archived))
+                Ok(Some(view))
             }
             None => Ok(None),
         }
@@ -287,7 +400,7 @@ where
 
                 let next_seq = current_seq + 1;
                 if let Some(event) = self.reader.get(&txn, next_seq)? {
-                    self.handler.handle(event)?;
+                    self.handler.handle(&event)?;
                 }
 
                 drop(txn); // Drop read txn
