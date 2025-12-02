@@ -79,3 +79,51 @@ fn test_master_key_encryption() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_wrong_master_key_access() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempdir()?;
+    let master_key = [0xAAu8; 32];
+    let wrong_key = [0xBBu8; 32];
+
+    // 1. Write with correct key
+    let config = StorageConfig {
+        path: dir.path().to_path_buf(),
+        encryption_enabled: true,
+        master_key: Some(master_key),
+        ..Default::default()
+    };
+    let storage = Storage::open(config.clone())?;
+    let mut writer = Writer::<SecEvent>::new(storage.clone());
+    writer.append(
+        1,
+        1,
+        SecEvent {
+            data: "Sensitive".to_string(),
+        },
+    )?;
+
+    drop(writer);
+    drop(storage);
+
+    // 2. Try to read with WRONG key using high-level API
+    let attack_config = StorageConfig {
+        path: dir.path().to_path_buf(),
+        encryption_enabled: true,
+        master_key: Some(wrong_key),
+        ..Default::default()
+    };
+    let attack_storage = Storage::open(attack_config)?;
+    let reader = Reader::<SecEvent>::new(attack_storage.clone());
+    let txn = attack_storage.env.read_txn()?;
+
+    let result = reader.get(&txn, 1);
+
+    assert!(
+        result.is_err(),
+        "Reader should fail when using wrong master key"
+    );
+    // Optionally check error message matches "Decryption failed" or similar
+
+    Ok(())
+}
