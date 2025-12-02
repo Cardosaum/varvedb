@@ -5,11 +5,18 @@ use aes_gcm::{
 };
 use rand::RngCore;
 
-/// Manages encryption keys for streams.
+/// Manages the lifecycle of encryption keys.
 ///
-/// Keys are stored in the `keystore` bucket, encrypted at rest (conceptually, though currently stored as raw bytes in this implementation).
+/// The `KeyManager` is responsible for generating, retrieving, and securely storing per-stream encryption keys.
+/// It employs a key wrapping strategy where each stream's key is encrypted using the global `master_key`
+/// before being persisted in the `keystore` bucket.
 ///
-/// # Example
+/// # Key Hierarchy
+///
+/// 1.  **Master Key**: Provided in `StorageConfig`. Used to encrypt Stream Keys.
+/// 2.  **Stream Key**: Generated randomly (32 bytes) for each stream. Used to encrypt Event Data.
+///
+/// # Examples
 ///
 /// ```rust
 /// use varvedb::storage::{Storage, StorageConfig};
@@ -27,6 +34,7 @@ use rand::RngCore;
 /// let storage = Storage::open(config)?;
 /// let key_manager = KeyManager::new(storage);
 ///
+/// // Retrieve or create a key for stream 123
 /// let key = key_manager.get_or_create_key(123)?;
 /// println!("Key: {:?}", key);
 /// # Ok(())
@@ -129,21 +137,27 @@ impl KeyManager {
     }
 }
 
-/// Encrypts plaintext using AES-256-GCM.
+/// Encrypts data using AES-256-GCM.
+///
+/// This function performs authenticated encryption with associated data (AEAD).
+/// It generates a random 12-byte nonce for each encryption operation and prepends it
+/// to the resulting ciphertext.
 ///
 /// # Arguments
-/// * `key` - The 32-byte encryption key.
-/// * `plaintext` - The data to encrypt.
-/// * `aad` - **Additional Authenticated Data**. This data is not encrypted but is authenticated.
-///   It ensures that the ciphertext is "bound" to this specific context.
-///   If `aad` is modified, decryption will fail.
+///
+/// *   `key`: The 32-byte (256-bit) encryption key.
+/// *   `plaintext`: The data to be encrypted.
+/// *   `aad`: Additional Authenticated Data. This data is not encrypted but is integrity-protected.
+///     It is used to bind the ciphertext to a specific context (e.g., Stream ID + Sequence Number),
+///     preventing replay or relocation attacks.
 ///
 /// # Returns
-/// Returns a `Vec<u8>` containing:
-/// 1. **Nonce (12 bytes)**: A random value unique to this encryption. Required for security.
-/// 2. **Ciphertext**: The encrypted data.
 ///
-/// We prepend the nonce to the ciphertext so it can be retrieved for decryption.
+/// A vector containing `[Nonce (12 bytes) | Ciphertext | Auth Tag (16 bytes)]`.
+///
+/// # Errors
+///
+/// Returns an error if encryption fails (e.g., internal crypto error).
 pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let mut nonce_bytes = [0u8; 12];
@@ -165,13 +179,21 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Re
     Ok(result)
 }
 
-/// Decrypts ciphertext using AES-256-GCM.
+/// Decrypts data using AES-256-GCM.
+///
+/// Expects the input to contain the 12-byte nonce prepended to the ciphertext.
 ///
 /// # Arguments
-/// * `key` - The 32-byte encryption key.
-/// * `ciphertext_with_nonce` - The byte slice containing the 12-byte Nonce followed by the Ciphertext.
-/// * `aad` - The **Additional Authenticated Data** used during encryption.
-///   Must match exactly what was passed to `encrypt`, otherwise decryption fails.
+///
+/// *   `key`: The 32-byte (256-bit) decryption key.
+/// *   `ciphertext_with_nonce`: The byte slice containing `[Nonce (12 bytes) | Ciphertext]`.
+/// *   `aad`: The Additional Authenticated Data used during encryption. Must match exactly.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// *   The input is too short (less than 12 bytes).
+/// *   Decryption fails (e.g., invalid key, tampered ciphertext, or AAD mismatch).
 pub fn decrypt(
     key: &[u8; 32],
     ciphertext_with_nonce: &[u8],

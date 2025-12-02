@@ -4,12 +4,13 @@ use crate::crypto::{self, KeyManager};
 use crate::metrics::VarveMetrics;
 use std::sync::Arc;
 
-/// The `Writer` struct handles appending events to the store.
+/// Appends events to the store with optimistic concurrency control.
 ///
-/// It ensures concurrency control via optimistic locking on `(stream_id, version)`
-/// and notifies subscribers of new events.
+/// The `Writer` ensures that events are appended in a strictly ordered sequence. It enforces
+/// optimistic locking by requiring the expected `version` for each stream, preventing
+/// concurrent modifications from overwriting data.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use varvedb::engine::Writer;
@@ -44,6 +45,7 @@ impl<E> Writer<E>
 where
     E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<1024>>,
 {
+    /// Creates a new `Writer` instance.
     pub fn new(storage: Storage) -> Self {
         let (tx, _) = tokio::sync::watch::channel(0);
         let key_manager = if storage.config.encryption_enabled {
@@ -61,15 +63,29 @@ where
         }
     }
 
+    /// Attaches metrics to the writer for observability.
     pub fn with_metrics(mut self, metrics: Arc<VarveMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
     }
 
+    /// Returns a receiver for real-time event notifications.
     pub fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
         self.tx.subscribe()
     }
 
+    /// Appends a new event to a stream.
+    ///
+    /// This operation is atomic. If the `stream_id` and `version` combination already exists,
+    /// the operation will fail with a validation error, ensuring optimistic concurrency control.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// *   The `stream_id` and `version` pair already exists (Concurrency Conflict).
+    /// *   Serialization of the event fails.
+    /// *   Encryption fails (if enabled).
+    /// *   The underlying storage encounters an I/O error.
     pub fn append(&mut self, stream_id: u128, version: u32, event: E) -> crate::error::Result<()> {
         let _timer = self
             .metrics
@@ -78,7 +94,7 @@ where
 
         let mut txn = self.storage.env.write_txn()?;
 
-        // 1. Concurrency Check: Check if (stream_id, version) already exists
+        // Concurrency Check
         let key = crate::storage::StreamKey::new(stream_id, version);
         let key_bytes = key.to_be_bytes();
 
@@ -94,7 +110,7 @@ where
             )));
         }
 
-        // 2. Get next Global Sequence
+        // Get next Global Sequence
         let last_seq = self
             .storage
             .events_log
@@ -103,7 +119,7 @@ where
             .unwrap_or(0);
         let new_seq = last_seq + 1;
 
-        // 3. Serialize Event (Zero-copy friendly)
+        // Serialize Event
         let bytes = rkyv::to_bytes::<_, 1024>(&event)
             .map_err(|e| crate::error::Error::Serialization(e.to_string()))?;
 
@@ -129,7 +145,7 @@ where
 
         let bytes_len = final_bytes.len() as u64;
 
-        // 4. Write to Log and Index
+        // Write to Log and Index
         self.storage
             .events_log
             .put(&mut txn, &new_seq, &final_bytes)?;
@@ -139,10 +155,10 @@ where
 
         txn.commit()?;
 
-        // 5. Notify Subscribers
+        // Notify Subscribers
         let _ = self.tx.send(new_seq);
 
-        // 6. Metrics
+        // Metrics
         if let Some(metrics) = &self.metrics {
             metrics.events_appended.inc();
             metrics.bytes_written.inc_by(bytes_len);
@@ -191,11 +207,13 @@ where
     }
 }
 
-/// The `Reader` struct provides zero-copy access to events.
+/// Provides zero-copy access to events from the store.
 ///
-/// It wraps the storage handle and provides methods to retrieve events by sequence number.
+/// The `Reader` allows efficient retrieval of events by sequence number. It leverages memory-mapped
+/// files to provide zero-copy access to data when encryption is disabled. When encryption is enabled,
+/// it transparently handles decryption.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use varvedb::engine::{Writer, Reader};
@@ -235,6 +253,7 @@ where
     E: rkyv::Archive,
     E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
 {
+    /// Creates a new `Reader` instance.
     pub fn new(storage: Storage) -> Self {
         let key_manager = if storage.config.encryption_enabled {
             Some(KeyManager::new(storage.clone()))
@@ -250,11 +269,23 @@ where
         }
     }
 
+    /// Attaches metrics to the reader for observability.
     pub fn with_metrics(mut self, metrics: Arc<VarveMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
     }
 
+    /// Retrieves an event by its global sequence number.
+    ///
+    /// Returns an `EventView` which provides access to the deserialized event.
+    /// If encryption is enabled, this method handles key retrieval and decryption transparently.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// *   The event data is corrupted or fails validation.
+    /// *   Decryption fails (e.g., invalid key or AAD mismatch).
+    /// *   The underlying storage encounters an I/O error.
     pub fn get<'txn>(
         &self,
         txn: &'txn heed::RoTxn,
@@ -319,12 +350,13 @@ where
     fn handle(&mut self, event: &E::Archived) -> crate::error::Result<()>;
 }
 
-/// The `Processor` struct manages a reactive event loop.
+/// Manages a reactive event loop for processing events.
 ///
-/// It subscribes to new event notifications and processes them sequentially using the provided `EventHandler`.
-/// It automatically manages the consumer cursor, ensuring at-least-once processing.
+/// The `Processor` subscribes to new event notifications and processes them sequentially
+/// using the provided `EventHandler`. It automatically manages the consumer cursor,
+/// ensuring at-least-once processing semantics.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// use varvedb::engine::EventHandler;
@@ -360,6 +392,9 @@ where
     E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
     H: EventHandler<E>,
 {
+    /// Creates a new `Processor`.
+    ///
+    /// *   `consumer_name`: A unique identifier for this consumer. Used to persist the cursor position.
     pub fn new(
         reader: Reader<E>,
         handler: H,
@@ -379,9 +414,19 @@ where
         }
     }
 
+    /// Starts the event processing loop.
+    ///
+    /// This method runs indefinitely, processing events as they arrive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// *   The underlying storage encounters an I/O error.
+    /// *   The event handler returns an error.
+    /// *   The event notification channel is closed.
     pub async fn run(&mut self) -> crate::error::Result<()> {
         loop {
-            // 1. Get current cursor
+            // Get current cursor
             let current_seq = {
                 let txn = self.reader.storage.env.read_txn()?;
                 self.reader
@@ -391,7 +436,7 @@ where
                     .unwrap_or(0)
             };
 
-            // 2. Check head
+            // Check head
             let head_seq = *self.rx.borrow();
 
             if current_seq < head_seq {

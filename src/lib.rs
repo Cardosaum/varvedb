@@ -1,17 +1,18 @@
 //! # VarveDB
 //!
-//! VarveDB is a high-performance, embedded, append-only event store written in Rust.
-//! It leverages [LMDB](http://www.lmdb.tech/doc/) (via `heed`) for ACID transactions and
-//! [rkyv](https://rkyv.org/) for zero-copy deserialization, making it suitable for
-//! high-throughput event sourcing applications.
+//! A high-performance, embedded, append-only event store.
 //!
-//! ## Key Features
+//! VarveDB provides a persistent, ACID-compliant event log optimized for high-throughput event sourcing.
+//! It is built on top of [LMDB](http://www.lmdb.tech/doc/) (via `heed`) for reliable transaction support
+//! and uses [rkyv](https://rkyv.org/) for zero-copy deserialization, ensuring minimal overhead during reads.
 //!
-//! - **Zero-Copy Reads**: Events are accessed directly from memory-mapped files without deserialization overhead.
-//! - **ACID Transactions**: All writes are atomic, consistent, isolated, and durable.
-//! - **Optimistic Concurrency**: Prevents write conflicts using stream versions.
-//! - **Reactive Event Bus**: Subscribe to real-time event updates via `tokio::watch`.
-//! - **Crypto-Shredding**: Built-in support for per-stream encryption and key deletion (GDPR compliance).
+//! ## Features
+//!
+//! *   **Zero-Copy Access**: Events are mapped directly from disk to memory, avoiding costly deserialization steps.
+//! *   **Optimistic Concurrency**: Writes are guarded by stream versions, preventing race conditions in concurrent environments.
+//! *   **Reactive Interface**: Real-time event subscriptions via `tokio::watch`.
+//! *   **Authenticated Encryption**: Optional per-stream encryption (AES-256-GCM) with AAD binding to prevent tampering and replay attacks.
+//! *   **GDPR Compliance**: Built-in crypto-shredding support via key deletion.
 //!
 //! ## Example
 //!
@@ -36,21 +37,18 @@
 //!     ..Default::default()
 //! };
 //!
-//! // 1. Open Storage
 //! let storage = Storage::open(config)?;
 //!
-//! // 2. Create Writer
+//! // Append an event
 //! let mut writer = Writer::new(storage.clone());
+//! writer.append(1, 1, MyEvent { id: 1, data: "Hello".to_string() })?;
 //!
-//! // 3. Append Event
-//! let event = MyEvent { id: 1, data: "Hello".to_string() };
-//! writer.append(1, 1, event)?;
-//!
-//! // 4. Read Event
+//! // Read the event back
 //! let reader = Reader::<MyEvent>::new(storage.clone());
 //! let txn = storage.env.read_txn()?;
-//! if let Some(archived_event) = reader.get(&txn, 1)? {
-//!     println!("Read event: {:?}", archived_event);
+//!
+//! if let Some(event) = reader.get(&txn, 1)? {
+//!     println!("Read event: {:?}", event);
 //! }
 //! # Ok(())
 //! # }

@@ -27,19 +27,42 @@ impl StreamKey {
 }
 
 /// Configuration for opening a VarveDB storage environment.
+///
+/// This struct controls the physical layout and behavior of the underlying LMDB environment.
 #[derive(Clone)]
 pub struct StorageConfig {
-    /// Path to the LMDB environment directory or file.
+    /// The directory where the database files will be stored.
+    ///
+    /// If `create_dir` is true, this directory will be created if it does not exist.
     pub path: PathBuf,
-    /// Maximum size of the memory map in bytes (default: 10TB).
+
+    /// The maximum size of the memory map in bytes.
+    ///
+    /// This value determines the maximum size of the database. It should be set large enough
+    /// to accommodate the expected data volume, as resizing requires reopening the environment.
+    /// The default is 10TB, which is effectively "unlimited" on 64-bit systems as it only
+    /// reserves virtual address space, not physical RAM.
     pub map_size: usize,
-    /// Maximum number of named databases (default: 10).
+
+    /// The maximum number of named databases.
+    ///
+    /// VarveDB uses a fixed number of internal databases (currently 4), but this can be
+    /// increased if custom buckets are needed in the future.
     pub max_dbs: u32,
-    /// Whether to create the directory if it doesn't exist (default: true).
+
+    /// Whether to create the directory if it doesn't exist.
     pub create_dir: bool,
-    /// Whether to enable encryption at rest (default: false).
+
+    /// Enables encryption at rest for all events.
+    ///
+    /// When enabled, all event payloads are encrypted using AES-256-GCM before being written to disk.
+    /// This requires a `master_key` to be provided.
     pub encryption_enabled: bool,
-    /// Master Key for encrypting the KeyStore (required if encryption_enabled is true).
+
+    /// The master key used to encrypt per-stream keys.
+    ///
+    /// Required if `encryption_enabled` is true. This key should be 32 bytes (256 bits) and
+    /// must be kept secure. Losing this key will render the database unreadable.
     pub master_key: Option<[u8; 32]>,
 }
 
@@ -56,12 +79,14 @@ impl Default for StorageConfig {
     }
 }
 
-/// The main storage handle holding the LMDB environment and database handles.
+/// A handle to the underlying storage engine.
 ///
-/// This struct is cheap to clone (Arc-like semantics via `heed::Env`).
+/// `Storage` wraps the LMDB environment and provides access to the internal databases (buckets).
+/// It is cheap to clone and shares the underlying environment handle, making it suitable for
+/// concurrent access across threads.
 #[derive(Clone)]
 pub struct Storage {
-    /// Underlying LMDB environment.
+    /// The raw LMDB environment.
     pub env: Env,
     // Buckets
     /// Maps Global Sequence Number (u64) -> Event Bytes.
@@ -70,9 +95,9 @@ pub struct Storage {
     pub stream_index: StreamIndexDb, // Key: StreamID+Ver (16+4 bytes)
     /// Maps Consumer ID -> Last Processed Global Sequence Number.
     pub consumer_cursors: ConsumerCursorDb,
-    /// Maps Stream ID -> Encryption Key (32 bytes).
+    /// Maps Stream ID -> Encrypted Key (variable length).
     pub keystore: KeyStoreDb,
-    /// Configuration used to open this storage.
+    /// The configuration used to open this storage.
     pub config: StorageConfig,
 }
 
