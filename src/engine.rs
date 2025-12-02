@@ -205,28 +205,31 @@ where
                 let txn = self.reader.storage.env.read_txn()?;
 
                 let next_seq = current_seq + 1;
-                if let Some(event) = self.reader.get(&txn, next_seq)? {
-                    self.handler.handle(event)?;
+                match self.reader.get(&txn, next_seq)? {
+                    Some(event) => {
+                        self.handler.handle(event)?;
 
-                    drop(txn); // Drop read txn
+                        drop(txn); // Drop read txn
 
-                    let mut wtxn = self.reader.storage.env.write_txn()?;
-                    self.reader.storage.consumer_cursors.put(
-                        &mut wtxn,
-                        &self.consumer_id,
-                        &next_seq,
-                    )?;
-                    wtxn.commit()?;
-                } else {
-                    // Gap? Just bump cursor.
-                    drop(txn);
-                    let mut wtxn = self.reader.storage.env.write_txn()?;
-                    self.reader.storage.consumer_cursors.put(
-                        &mut wtxn,
-                        &self.consumer_id,
-                        &next_seq,
-                    )?;
-                    wtxn.commit()?;
+                        let mut wtxn = self.reader.storage.env.write_txn()?;
+                        self.reader.storage.consumer_cursors.put(
+                            &mut wtxn,
+                            &self.consumer_id,
+                            &next_seq,
+                        )?;
+                        wtxn.commit()?;
+                    }
+                    None => {
+                        // Gap? Just bump cursor.
+                        drop(txn);
+                        let mut wtxn = self.reader.storage.env.write_txn()?;
+                        self.reader.storage.consumer_cursors.put(
+                            &mut wtxn,
+                            &self.consumer_id,
+                            &next_seq,
+                        )?;
+                        wtxn.commit()?;
+                    }
                 }
             } else {
                 // Wait mode

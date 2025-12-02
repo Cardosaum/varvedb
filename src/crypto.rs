@@ -17,18 +17,20 @@ impl KeyManager {
     pub fn get_or_create_key(&self, stream_id: u128) -> crate::error::Result<[u8; 32]> {
         let mut txn = self.storage.env.write_txn()?;
 
-        if let Some(key_bytes) = self.storage.keystore.get(&txn, &stream_id)? {
-            let mut key = [0u8; 32];
-            key.copy_from_slice(key_bytes);
-            txn.commit()?;
-            Ok(key)
-        } else {
-            let mut key = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut key);
-
-            self.storage.keystore.put(&mut txn, &stream_id, &key)?;
-            txn.commit()?;
-            Ok(key)
+        match self.storage.keystore.get(&txn, &stream_id)? {
+            Some(key_bytes) => {
+                let mut key = [0u8; 32];
+                key.copy_from_slice(key_bytes);
+                txn.commit()?;
+                Ok(key)
+            }
+            None => {
+                let mut key = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut key);
+                self.storage.keystore.put(&mut txn, &stream_id, &key)?;
+                txn.commit()?;
+                Ok(key)
+            }
         }
     }
 
