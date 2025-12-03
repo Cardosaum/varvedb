@@ -1,5 +1,10 @@
 # VarveDB
 
+[![CI](https://github.com/Cardosaum/varvedb/actions/workflows/ci.yml/badge.svg)](https://github.com/Cardosaum/varvedb/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/varvedb.svg)](https://crates.io/crates/varvedb)
+[![Docs.rs](https://docs.rs/varvedb/badge.svg)](https://docs.rs/varvedb)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
+
 A high-performance, embedded, append-only event store for Rust.
 
 VarveDB provides a persistent, ACID-compliant event log optimized for high-throughput event sourcing. It leverages **LMDB** for reliable storage and **rkyv** for zero-copy deserialization, ensuring minimal overhead.

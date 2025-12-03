@@ -3,6 +3,24 @@ name = "varvedb"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+description = "A high-performance, embedded, append-only event store for Rust."
+repository = "https://github.com/Cardosaum/varvedb"
+documentation = "https://docs.rs/varvedb"
+homepage = "https://github.com/Cardosaum/varvedb"
+keywords = ["event-store", "database", "embedded", "event-sourcing", "lmdb"]
+categories = ["database-implementations", "data-structures"]
+rust-version = "1.75"
+exclude = [
+    ".github",
+    ".gitignore",
+    "deny.toml",
+    "scripts",
+    "book",
+    "images",
+    "tests",
+    "benches",
+    "fuzz",
+]
 
 [dependencies]
 aes-gcm = "0.10.3"
