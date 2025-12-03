@@ -15,6 +15,7 @@ pub type EventLogDb = Database<U64<heed::byteorder::BE>, Bytes>;
 pub type StreamIndexDb = Database<Bytes, U64<heed::byteorder::BE>>;
 pub type ConsumerCursorDb = Database<U64<heed::byteorder::BE>, U64<heed::byteorder::BE>>;
 pub type KeyStoreDb = Database<U128<heed::byteorder::BE>, Bytes>; // StreamID -> Key (32 bytes)
+pub type BlobDb = Database<Bytes, Bytes>; // Hash (32 bytes) -> Data (Variable)
 
 pub struct StreamKey {
     pub stream_id: u128,
@@ -105,6 +106,8 @@ pub struct Storage {
     pub consumer_cursors: ConsumerCursorDb,
     /// Maps Stream ID -> Encrypted Key (variable length).
     pub keystore: KeyStoreDb,
+    /// Maps Blob Hash -> Blob Data.
+    pub blobs: BlobDb,
     /// The configuration used to open this storage.
     pub config: StorageConfig,
     /// Shared notification channel for new events.
@@ -152,6 +155,7 @@ impl Storage {
         let stream_index = env.create_database(&mut txn, Some("stream_index"))?;
         let consumer_cursors = env.create_database(&mut txn, Some("consumer_cursors"))?;
         let keystore = env.create_database(&mut txn, Some("keystore"))?;
+        let blobs = env.create_database(&mut txn, Some("blobs"))?;
         txn.commit()?;
 
         let (tx, rx) = tokio::sync::watch::channel(0);
@@ -163,6 +167,7 @@ impl Storage {
             stream_index,
             consumer_cursors,
             keystore,
+            blobs,
             config,
             notifier,
             notifier_rx: rx,

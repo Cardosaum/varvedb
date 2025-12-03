@@ -6,31 +6,31 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
-/// Default buffer size for serialization.
-pub const DEFAULT_SERIALIZATION_BUFFER_SIZE: usize = 1024;
+/// The default buffer size for serialization.
+pub const DEFAULT_SERIALIZATION_BUFFER_SIZE: usize = 4096;
 
-/// Size of the encryption key in bytes (AES-256).
-pub const KEY_SIZE: usize = 32;
+/// The default batch size for the processor.
+pub const DEFAULT_BATCH_SIZE: usize = 1000;
 
-/// Size of the nonce in bytes.
-pub const NONCE_SIZE: usize = 12;
+/// The default batch timeout in milliseconds.
+pub const DEFAULT_BATCH_TIMEOUT_MS: u64 = 100;
 
-/// Size of the Stream ID in bytes.
+/// The size of the Stream ID in bytes.
 pub const STREAM_ID_SIZE: usize = 16;
 
-/// Size of the Sequence Number in bytes.
-pub const SEQ_SIZE: usize = 8;
+/// The size of the encryption key in bytes (AES-256).
+pub const KEY_SIZE: usize = 32;
 
-/// Capacity for Additional Authenticated Data (AAD) vector.
-/// AAD consists of Stream ID + Sequence Number.
-pub const AAD_CAPACITY: usize = STREAM_ID_SIZE + SEQ_SIZE;
+/// The size of the nonce in bytes (AES-GCM).
+pub const NONCE_SIZE: usize = 12;
 
-/// Minimum size of an encrypted event.
-/// Must contain at least Stream ID and Nonce.
-pub const ENCRYPTED_EVENT_MIN_SIZE: usize = STREAM_ID_SIZE + NONCE_SIZE;
+/// The minimum size of an encrypted event (StreamID + Nonce + Tag).
+/// StreamID (16) + Nonce (12) + Tag (16) = 44 bytes.
+pub const ENCRYPTED_EVENT_MIN_SIZE: usize = 44;
 
-/// Default batch size for the processor.
-pub const DEFAULT_BATCH_SIZE: usize = 100;
+/// The capacity of the AAD buffer (StreamID + Seq).
+/// StreamID (16) + Seq (8) = 24 bytes.
+pub const AAD_CAPACITY: usize = 24;
 
-/// Default batch timeout in milliseconds for the processor.
-pub const DEFAULT_BATCH_TIMEOUT_MS: u64 = 100;
+/// The maximum size of a payload to be stored inline (2KB).
+pub const MAX_INLINE_SIZE: usize = 2048;

@@ -6,7 +6,9 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
+use crate::model::Payload;
 use crate::storage::Storage;
+use sha2::{Digest, Sha256};
 
 use crate::crypto::{self, KeyManager};
 use crate::metrics::VarveMetrics;
@@ -161,8 +163,30 @@ where
         let new_seq = last_seq + 1;
 
         // Serialize Event
-        let bytes =
+        let event_bytes =
             rkyv::to_bytes::<_, { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE }>(&event)
+                .map_err(|e| crate::error::Error::EventSerialization(e.to_string()))?;
+
+        // Check size and determine Payload
+        let payload = if event_bytes.len() > crate::constants::MAX_INLINE_SIZE {
+            // Large Payload: Store in Blobs DB
+            let mut hasher = Sha256::new();
+            hasher.update(&event_bytes);
+            let hash = hasher.finalize();
+            let hash_array: [u8; 32] = hash.into();
+
+            self.storage
+                .blobs
+                .put(&mut txn, &hash_array.as_slice(), &event_bytes.as_slice())?;
+            Payload::BlobRef(hash_array)
+        } else {
+            // Small Payload: Inline
+            Payload::Inline(event_bytes.into_vec())
+        };
+
+        // Serialize Payload
+        let bytes =
+            rkyv::to_bytes::<_, { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE }>(&payload)
                 .map_err(|e| crate::error::Error::EventSerialization(e.to_string()))?;
 
         // Encrypt if enabled
@@ -342,7 +366,7 @@ where
     ) -> crate::error::Result<Option<EventView<'txn, E>>> {
         match self.storage.events_log.get(txn, &seq)? {
             Some(bytes) => {
-                let data = if let Some(km) = &self.key_manager {
+                let payload_data = if let Some(km) = &self.key_manager {
                     // Expect: [StreamID (16)][Nonce (12)][Ciphertext]
                     if bytes.len() < crate::constants::ENCRYPTED_EVENT_MIN_SIZE {
                         return Err(crate::error::Error::InvalidEncryptedEventLength {
@@ -369,15 +393,63 @@ where
                     EventData::Borrowed(bytes)
                 };
 
-                // Verify rkyv validity (zero-copy check)
-                rkyv::check_archived_root::<E>(match &data {
+                // Deserialize Payload
+                let payload_bytes = match &payload_data {
+                    EventData::Borrowed(b) => *b,
+                    EventData::Owned(b) => b.as_slice(),
+                };
+
+                let archived_payload = rkyv::check_archived_root::<Payload>(payload_bytes)
+                    .map_err(|e| crate::error::Error::EventValidation(e.to_string()))?;
+
+                let final_data = match archived_payload {
+                    rkyv::Archived::<Payload>::Inline(inline_bytes) => {
+                        EventData::Owned(inline_bytes.as_slice().to_vec())
+                    }
+                    rkyv::Archived::<Payload>::BlobRef(hash) => {
+                        let blob_bytes = self
+                            .storage
+                            .blobs
+                            .get(txn, &hash.as_slice())?
+                            .ok_or_else(|| {
+                                crate::error::Error::EventValidation("Blob not found".to_string())
+                            })?;
+
+                        // MADVISE: Tell OS we don't need this page anymore
+                        #[cfg(unix)]
+                        unsafe {
+                            let ptr = blob_bytes.as_ptr() as *const libc::c_void;
+                            let len = blob_bytes.len();
+                            // Round down to page boundary (required by madvise)
+                            // Actually, heed/lmdb gives us a pointer. We should probably madvise the whole page containing it?
+                            // Or just the range. madvise usually requires page alignment.
+                            // Let's try to align it.
+                            let page_size = libc::sysconf(libc::_SC_PAGESIZE) as usize;
+                            let addr = ptr as usize;
+                            let aligned_addr = addr & !(page_size - 1);
+                            let offset = addr - aligned_addr;
+                            let aligned_len = len + offset;
+
+                            libc::madvise(
+                                aligned_addr as *mut libc::c_void,
+                                aligned_len,
+                                libc::MADV_DONTNEED,
+                            );
+                        }
+
+                        EventData::Owned(blob_bytes.to_vec())
+                    }
+                };
+
+                // Verify rkyv validity (zero-copy check) of the actual event
+                rkyv::check_archived_root::<E>(match &final_data {
                     EventData::Borrowed(b) => b,
                     EventData::Owned(b) => b.as_slice(),
                 })
                 .map_err(|e| crate::error::Error::EventValidation(e.to_string()))?;
 
                 let view = EventView {
-                    data,
+                    data: final_data,
                     _marker: std::marker::PhantomData,
                 };
 
