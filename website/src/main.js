@@ -85,4 +85,22 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  // Mobile Menu Toggle
+  const mobileToggle = document.querySelector('.mobile-toggle');
+  const navbar = document.querySelector('.navbar');
+  const navLinks = document.querySelectorAll('.links a, .btn-github');
+
+  if (mobileToggle) {
+    mobileToggle.addEventListener('click', () => {
+      navbar.classList.toggle('mobile-menu-open');
+    });
+
+    // Close menu when a link is clicked
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        navbar.classList.remove('mobile-menu-open');
+      });
+    });
+  }
 });
