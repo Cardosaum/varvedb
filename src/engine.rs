@@ -177,7 +177,7 @@ where
 
             self.storage
                 .blobs
-                .put(&mut txn, &hash_array.as_slice(), &event_bytes.as_slice())?;
+                .put(&mut txn, hash_array.as_slice(), event_bytes.as_slice())?;
             Payload::BlobRef(hash_array)
         } else {
             // Small Payload: Inline
@@ -407,13 +407,15 @@ where
                         EventData::Owned(inline_bytes.as_slice().to_vec())
                     }
                     rkyv::Archived::<Payload>::BlobRef(hash) => {
-                        let blob_bytes = self
-                            .storage
-                            .blobs
-                            .get(txn, &hash.as_slice())?
-                            .ok_or_else(|| {
-                                crate::error::Error::EventValidation("Blob not found".to_string())
-                            })?;
+                        let blob_bytes =
+                            self.storage
+                                .blobs
+                                .get(txn, hash.as_slice())?
+                                .ok_or_else(|| {
+                                    crate::error::Error::EventValidation(
+                                        "Blob not found".to_string(),
+                                    )
+                                })?;
 
                         // MADVISE: Tell OS we don't need this page anymore
                         #[cfg(unix)]

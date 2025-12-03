@@ -2,7 +2,7 @@
 title: "[Core] Implement \"Sidecar\" Storage for Large Payloads to Prevent Cache Thrashing"
 tags: ["performance", "architecture", "storage-engine"]
 priority: "High"
-status: "Open"
+status: "Closed"
 ---
 
 ### 1. The Problem
