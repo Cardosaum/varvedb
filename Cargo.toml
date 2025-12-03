@@ -21,6 +21,7 @@ exclude = [
     "tests",
     "benches",
     "fuzz",
+    "issues",
 ]
 
 [dependencies]
