@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-12-03
+
+### Documentation
+
+- Add issue tracking workflow README and close issue 012 for sidecar storage.
+
+### Features
+
+- Display `.links` element on small screens by removing its hidden style.
+- Implement sidecar storage for large event payloads to prevent cache thrashing
+
 ## [0.1.2] - 2025-12-03
 
 ### Documentation
