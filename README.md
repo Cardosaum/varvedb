@@ -2,7 +2,7 @@
 > **UNDER DEVELOPMENT**: This project is currently in early development and is **NOT** production ready. APIs and storage formats are subject to change.
 
 <div align="center">
-  <img src="assets/logo.svg" height="200" alt="VarveDB Logo" style="background-color: white;">
+  <img src="https://raw.githubusercontent.com/Cardosaum/varvedb/main/assets/logo.svg" height="200" alt="VarveDB Logo" style="background-color: white;">
   <h1>VarveDB</h1>
   <p>
     <strong>A high-performance, embedded, append-only event store for Rust.</strong>
@@ -163,4 +163,4 @@ We have a contributing guide to help you get involved in the VarveDB project.
 
 ## License
 
-This project is licensed under the [Mozilla Public License 2.0](LICENSE).
+This project is licensed under the [Mozilla Public License 2.0](https://github.com/Cardosaum/varvedb/blob/main/LICENSE).
