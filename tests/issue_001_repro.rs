@@ -51,7 +51,7 @@ fn test_validation_error_on_corrupted_data() -> Result<(), Box<dyn std::error::E
 
     // 4. Assert that we get a Validation error
     match result {
-        Err(varvedb::error::Error::Validation(_)) => {
+        Err(varvedb::error::Error::EventValidation(_)) => {
             // Success! We caught the corruption.
         }
         Ok(_) => {

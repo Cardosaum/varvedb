@@ -90,9 +90,10 @@ impl KeyManager {
 
                 let mut key = Zeroizing::new([0u8; 32]);
                 if plaintext_key_vec.len() != 32 {
-                    return Err(crate::error::Error::Validation(
-                        "Invalid decrypted key length".to_string(),
-                    ));
+                    return Err(crate::error::Error::InvalidKeyLength {
+                        actual: plaintext_key_vec.len(),
+                        expected: 32,
+                    });
                 }
                 key.copy_from_slice(&plaintext_key_vec);
                 Ok(key)
@@ -131,9 +132,10 @@ impl KeyManager {
 
                 let mut key = Zeroizing::new([0u8; 32]);
                 if plaintext_key_vec.len() != 32 {
-                    return Err(crate::error::Error::Validation(
-                        "Invalid decrypted key length".to_string(),
-                    ));
+                    return Err(crate::error::Error::InvalidKeyLength {
+                        actual: plaintext_key_vec.len(),
+                        expected: 32,
+                    });
                 }
                 key.copy_from_slice(&plaintext_key_vec);
                 Ok(Some(key))
@@ -184,7 +186,7 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Re
 
     let mut ciphertext = cipher
         .encrypt(nonce, payload)
-        .map_err(|e| crate::error::Error::Validation(format!("Encryption failed: {}", e)))?;
+        .map_err(|e| crate::error::Error::EncryptionError(format!("Encryption failed: {}", e)))?;
 
     // Prepend Nonce to ciphertext
     let mut result = nonce_bytes.to_vec();
@@ -213,9 +215,10 @@ pub fn decrypt(
     aad: &[u8],
 ) -> crate::error::Result<Vec<u8>> {
     if ciphertext_with_nonce.len() < 12 {
-        return Err(crate::error::Error::Validation(
-            "Invalid ciphertext length".to_string(),
-        ));
+        return Err(crate::error::Error::InvalidCiphertextLength {
+            actual: ciphertext_with_nonce.len(),
+            minimum: 12,
+        });
     }
 
     let (nonce_bytes, ciphertext) = ciphertext_with_nonce.split_at(12);
@@ -229,5 +232,5 @@ pub fn decrypt(
 
     cipher
         .decrypt(nonce, payload)
-        .map_err(|e| crate::error::Error::Validation(format!("Decryption failed: {}", e)))
+        .map_err(|e| crate::error::Error::DecryptionError(format!("Decryption failed: {}", e)))
 }

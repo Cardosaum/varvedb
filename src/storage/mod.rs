@@ -120,13 +120,13 @@ impl Storage {
         }
 
         if config.map_size == 0 {
-            return Err(crate::error::Error::Validation(
+            return Err(crate::error::Error::InvalidConfig(
                 "map_size must be greater than 0".to_string(),
             ));
         }
 
         if config.max_dbs < 4 {
-            return Err(crate::error::Error::Validation(
+            return Err(crate::error::Error::InvalidConfig(
                 "max_dbs must be at least 4".to_string(),
             ));
         }
@@ -134,7 +134,7 @@ impl Storage {
         #[cfg(target_pointer_width = "32")]
         {
             if config.map_size > 3 * 1024 * 1024 * 1024 {
-                return Err(crate::error::Error::Validation(
+                return Err(crate::error::Error::InvalidConfig(
                     "map_size exceeds 3GB limit for 32-bit systems".to_string(),
                 ));
             }

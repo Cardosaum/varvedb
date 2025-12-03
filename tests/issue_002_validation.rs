@@ -20,7 +20,7 @@ fn test_storage_validation() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     match Storage::open(config) {
-        Err(varvedb::error::Error::Validation(msg)) => {
+        Err(varvedb::error::Error::InvalidConfig(msg)) => {
             assert!(msg.contains("map_size"));
         }
         Ok(_) => panic!("Expected validation error for map_size=0"),
@@ -34,7 +34,7 @@ fn test_storage_validation() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     match Storage::open(config) {
-        Err(varvedb::error::Error::Validation(msg)) => {
+        Err(varvedb::error::Error::InvalidConfig(msg)) => {
             assert!(msg.contains("max_dbs"));
         }
         Ok(_) => panic!("Expected validation error for max_dbs=3"),

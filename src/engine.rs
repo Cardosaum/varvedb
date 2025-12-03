@@ -152,7 +152,7 @@ where
 
         // Serialize Event
         let bytes = rkyv::to_bytes::<_, 1024>(&event)
-            .map_err(|e| crate::error::Error::Serialization(e.to_string()))?;
+            .map_err(|e| crate::error::Error::EventSerialization(e.to_string()))?;
 
         // Encrypt if enabled
         let final_bytes = if let Some(km) = &self.key_manager {
@@ -333,9 +333,10 @@ where
                 let data = if let Some(km) = &self.key_manager {
                     // Expect: [StreamID (16)][Nonce (12)][Ciphertext]
                     if bytes.len() < 28 {
-                        return Err(crate::error::Error::Validation(
-                            "Encrypted event too short".to_string(),
-                        ));
+                        return Err(crate::error::Error::InvalidEncryptedEventLength {
+                            actual: bytes.len(),
+                            minimum: 28,
+                        });
                     }
 
                     let (stream_id_bytes, rest) = bytes.split_at(16);
@@ -361,7 +362,7 @@ where
                     EventData::Borrowed(b) => b,
                     EventData::Owned(b) => b.as_slice(),
                 })
-                .map_err(|e| crate::error::Error::Validation(e.to_string()))?;
+                .map_err(|e| crate::error::Error::EventValidation(e.to_string()))?;
 
                 let view = EventView {
                     data,
