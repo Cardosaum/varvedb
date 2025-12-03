@@ -1,0 +1,6 @@
+[book]
+authors = ["Matheus"]
+language = "en"
+multilingual = false
+src = "src"
+title = "VarveDB Documentation"
