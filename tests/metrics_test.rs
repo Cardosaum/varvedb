@@ -55,18 +55,15 @@ fn test_metrics_collection() -> Result<(), Box<dyn std::error::Error>> {
 
     let events_appended = metric_families
         .iter()
-        .find(|m| m.get_name() == "varvedb_events_appended_total")
+        .find(|m| m.name() == "varvedb_events_appended_total")
         .expect("events_appended metric not found");
-    assert_eq!(
-        events_appended.get_metric()[0].get_counter().get_value(),
-        1.0
-    );
+    assert_eq!(events_appended.get_metric()[0].get_counter().value(), 1.0);
 
     let events_read = metric_families
         .iter()
-        .find(|m| m.get_name() == "varvedb_events_read_total")
+        .find(|m| m.name() == "varvedb_events_read_total")
         .expect("events_read metric not found");
-    assert_eq!(events_read.get_metric()[0].get_counter().get_value(), 1.0);
+    assert_eq!(events_read.get_metric()[0].get_counter().value(), 1.0);
 
     Ok(())
 }
