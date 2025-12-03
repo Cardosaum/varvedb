@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="VarveDB: A high-performance, embedded, append-only event store for Rust." />
+    <title>VarveDB - Institutional Grade Event Store</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app">
+      <nav class="navbar">
+        <div class="container">
+          <a href="#" class="logo">
+            <img src="/logo.svg" alt="VarveDB Logo" />
+            <span>VarveDB</span>
+          </a>
+          <div class="links">
+            <a href="#features">Features</a>
+            <a href="#architecture">Architecture</a>
+            <a href="https://docs.rs/varvedb" target="_blank">Docs</a>
+            <a href="https://github.com/Cardosaum/varvedb" target="_blank" class="github-link">GitHub</a>
+          </div>
+        </div>
+      </nav>
+
+      <main>
+        <section class="hero varve-layer layer-1">
+          <div class="container">
+            <div class="hero-content">
+              <img src="/logo.svg" alt="VarveDB Logo" class="hero-logo" />
+              <h1>Build Reliable <br/><span class="highlight">Event-Driven Systems</span></h1>
+              <p class="tagline">An embedded, ACID-compliant event store designed for performance and correctness.</p>
+              <div class="cta-group">
+                <a href="https://crates.io/crates/varvedb" target="_blank" class="btn btn-primary">Get Started</a>
+                <a href="https://docs.rs/varvedb" target="_blank" class="btn btn-secondary">Read the Docs</a>
+              </div>
+              <div class="code-preview">
+                <pre><code class="language-toml">
+[dependencies]
+varvedb = "0.1"
+                </code></pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="features" class="features varve-layer layer-2">
+          <div class="container">
+            <h2>Institutional Grade Reliability</h2>
+            <div class="grid">
+              <div class="card">
+                <div class="card-icon">
+                  <!-- Chip Icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" />
+                  </svg>
+                </div>
+                <h3>Zero-Copy Persistence</h3>
+                <p>Leverages <strong>rkyv</strong> to map events directly from disk to memory, eliminating serialization overhead and enabling sub-microsecond reads.</p>
+              </div>
+              <div class="card">
+                <div class="card-icon">
+                  <!-- Shield Check Icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+                  </svg>
+                </div>
+                <h3>ACID Guarantees</h3>
+                <p>Built on top of <strong>LMDB</strong> to provide full ACID transactions. Writes are atomic, consistent, isolated, and durable, ensuring data integrity.</p>
+              </div>
+              <div class="card">
+                <div class="card-icon">
+                  <!-- Bolt Icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                  </svg>
+                </div>
+                <h3>Asynchronous & Reactive</h3>
+                <p>First-class support for <strong>tokio</strong>. Subscribe to event streams in real-time with <code>tokio::watch</code> for building responsive architectures.</p>
+              </div>
+              <div class="card">
+                <div class="card-icon">
+                  <!-- Lock Closed Icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                  </svg>
+                </div>
+                <h3>Cryptographic Security</h3>
+                <p>Optional authenticated encryption using <strong>AES-256-GCM</strong> with AAD binding. Data is secured at rest with per-stream keys.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="architecture" class="architecture varve-layer layer-3">
+          <div class="container">
+            <h2>Architecture</h2>
+            <p class="section-desc">Designed for throughput and reliability. A clean separation of concerns.</p>
+            
+            <div class="arch-diagram">
+              <div class="arch-box user">User Application</div>
+              <div class="arch-arrow">⬇️ Append / Read / Subscribe</div>
+              <div class="arch-box varvedb">
+                <div class="arch-title">VarveDB</div>
+                <div class="arch-inner">
+                  <div class="arch-component">Writer</div>
+                  <div class="arch-component">Reader</div>
+                  <div class="arch-component">Processor</div>
+                </div>
+                <div class="arch-arrow-inner">⬇️ Zero-Copy I/O</div>
+                <div class="arch-box storage">LMDB Environment (Events, Index)</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <div class="container">
+          <div class="footer-content">
+            <div class="footer-col">
+              <h4>VarveDB</h4>
+              <p>Embedded event store for modern Rust applications.</p>
+            </div>
+            <div class="footer-col">
+              <h4>Resources</h4>
+              <a href="https://docs.rs/varvedb">Documentation</a>
+              <a href="https://crates.io/crates/varvedb">Crates.io</a>
+            </div>
+            <div class="footer-col">
+              <h4>Community</h4>
+              <a href="https://github.com/Cardosaum/varvedb">GitHub</a>
+              <a href="https://github.com/Cardosaum/varvedb/issues">Issues</a>
+            </div>
+          </div>
+          <div class="copyright">
+            &copy; 2025 VarveDB Contributors. Licensed under MPL-2.0.
+          </div>
+        </div>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
