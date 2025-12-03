@@ -1,0 +1,35 @@
+name: Fuzzing
+
+on:
+  workflow_dispatch:
+    inputs:
+      fuzz_time:
+        description: 'Time to run each fuzz target (in seconds)'
+        required: true
+        default: '60'
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
+        
+      - name: Install dependencies
+        run: sudo apt-get install -y liblmdb-dev
+        
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+        
+      - name: Run read_fuzz
+        run: cargo fuzz run read_fuzz -- -max_total_time=${{ inputs.fuzz_time }}
+        
+      - name: Run write_fuzz
+        run: cargo fuzz run write_fuzz -- -max_total_time=${{ inputs.fuzz_time }}
