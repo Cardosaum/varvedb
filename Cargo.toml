@@ -10,7 +10,7 @@ documentation = "https://docs.rs/varvedb"
 homepage = "https://github.com/Cardosaum/varvedb"
 keywords = ["event-store", "database", "embedded", "event-sourcing", "lmdb"]
 categories = ["database-implementations", "data-structures"]
-rust-version = "1.75"
+rust-version = "1.81.0"
 exclude = [
     ".github",
     ".gitignore",

@@ -153,7 +153,7 @@ VarveDB supports optional encryption at rest using **AES-256-GCM**.
 
 ## Supported Rust Versions
 
-VarveDB is built against the latest stable release. The minimum supported version is 1.75. The current policy is that the minimum Rust version required to use this crate can be increased in minor version updates. For example, if `crate 1.0` requires Rust 1.20.0, then `crate 1.0.z` for all values of `z` will also require Rust 1.20.0 or newer. However, `crate 1.1` may require Rust 1.22.0.
+VarveDB is built against the latest stable release. The minimum supported version is 1.81.0. The current policy is that the minimum Rust version required to use this crate can be increased in minor version updates. For example, if `crate 1.0` requires Rust 1.20.0, then `crate 1.0.z` for all values of `z` will also require Rust 1.20.0 or newer. However, `crate 1.1` may require Rust 1.22.0.
 
 ## Contributing
 
