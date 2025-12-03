@@ -10,8 +10,9 @@
 set -e
 
 HOOKS_DIR=".git/hooks"
+PRE_PUSH_HOOK="$HOOKS_DIR/pre-push"
 PRE_COMMIT_HOOK="$HOOKS_DIR/pre-commit"
-SCRIPT_PATH="../../scripts/pre-commit.sh"
+SCRIPT_PATH="../../scripts/pre-push.sh"
 
 if [ ! -d ".git" ]; then
     echo "Error: .git directory not found. Run this script from the project root."
@@ -20,15 +21,21 @@ fi
 
 echo "Setting up git hooks..."
 
-# Remove existing hook if it exists
-if [ -f "$PRE_COMMIT_HOOK" ]; then
+# Remove existing pre-commit hook if it exists
+if [ -f "$PRE_COMMIT_HOOK" ] || [ -L "$PRE_COMMIT_HOOK" ]; then
     echo "Removing existing pre-commit hook..."
     rm "$PRE_COMMIT_HOOK"
 fi
 
-# Create symlink
-ln -s "$SCRIPT_PATH" "$PRE_COMMIT_HOOK"
-chmod +x "$PRE_COMMIT_HOOK"
-chmod +x scripts/pre-commit.sh
+# Remove existing pre-push hook if it exists
+if [ -f "$PRE_PUSH_HOOK" ]; then
+    echo "Removing existing pre-push hook..."
+    rm "$PRE_PUSH_HOOK"
+fi
 
-echo "Git pre-commit hook installed successfully! ✅"
+# Create symlink
+ln -s "$SCRIPT_PATH" "$PRE_PUSH_HOOK"
+chmod +x "$PRE_PUSH_HOOK"
+chmod +x scripts/pre-push.sh
+
+echo "Git pre-push hook installed successfully! ✅"

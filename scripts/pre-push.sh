@@ -9,7 +9,7 @@
 
 set -e
 
-echo "Running pre-commit checks..."
+echo "Running pre-push checks..."
 
 # 1. License Check
 echo "Checking licenses..."
