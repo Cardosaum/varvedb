@@ -2,6 +2,7 @@
 
 ## Context
 The system relies on `rkyv` for zero-copy deserialization. If invalid data is written (e.g., via bit rot), reading it could cause crashes or UB.
+Currently, there are no fuzz tests implemented.
 
 ## Goal
 Add fuzz tests to ensure the system handles arbitrary input gracefully.
