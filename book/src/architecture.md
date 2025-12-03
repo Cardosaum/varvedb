@@ -11,21 +11,31 @@ The system consists of three main components that interact with the underlying s
 3.  **Processor**: A background task that subscribes to new events and dispatches them to registered handlers.
 
 ```mermaid
-graph TD
-    User[User Application]
-    subgraph VarveDB
-        Writer[Writer<E>]
-        Reader[Reader<E>]
-        Processor[Processor]
+flowchart TD
+    %% Custom Styles
+    classDef user fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,rx:10,ry:10;
+    classDef component fill:#f0fdf4,stroke:#15803d,stroke-width:2px,color:#14532d,rx:5,ry:5;
+    classDef storage fill:#fff7ed,stroke:#c2410c,stroke-width:2px,color:#7c2d12,shape:cylinder;
+    classDef bus fill:#faf5ff,stroke:#7e22ce,stroke-width:2px,color:#581c87,rx:20,ry:20;
+    classDef subgraphStyle fill:#ffffff,stroke:#94a3b8,stroke-width:2px,stroke-dasharray: 5 5,color:#475569;
+
+    User["👤 User Application"]:::user
+
+    subgraph VarveDB ["📦 VarveDB"]
+        direction TB
+        Writer["✍️ Writer&lt;E&gt;"]:::component
+        Reader["📖 Reader&lt;E&gt;"]:::component
+        Processor["⚙️ Processor"]:::component
         
-        subgraph Storage[LMDB Environment]
-            Events[events_log (Seq -> Bytes)]
-            Index[stream_index (StreamID+Ver -> Seq)]
-            Cursors[consumer_cursors (Name -> Seq)]
-            KeyStore[keystore (StreamID -> Key)]
+        subgraph Storage ["💾 LMDB Environment"]
+            direction TB
+            Events[("events_log<br/>(Seq ➡ Bytes)")]:::storage
+            Index[("stream_index<br/>(StreamID+Ver ➡ Seq)")]:::storage
+            Cursors[("consumer_cursors<br/>(Name ➡ Seq)")]:::storage
+            KeyStore[("keystore<br/>(StreamID ➡ Key)")]:::storage
         end
         
-        Bus[Tokio Watch Bus]
+        Bus(["⚡ Tokio Watch Bus"]):::bus
     end
 
     User -->|Append| Writer
@@ -41,6 +51,9 @@ graph TD
     Processor -->|Listen| Bus
     Processor -->|Load/Save| Cursors
     Processor -->|Handle| User
+    
+    %% Apply styles to subgraphs
+    class VarveDB,Storage subgraphStyle
 ```
 
 ## Storage Layer (LMDB)
