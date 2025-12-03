@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2025-12-03
+
+### Documentation
+
+- Add logo and center header content in README
+- Update installation instructions, rename usage section, add supported Rust versions and contributing sections, and clarify license statement
+
+### Features
+
+- Add logo and update README with a development warning and an enhanced architecture diagram.
+- Redesign and relocate `logo.svg` to `assets/logo.svg`
+- Introduce new project logo for the book and README, and add a development status warning to the introduction.
+
+### Miscellaneous Tasks
+
+- Update minimum supported Rust version to 1.81.0 in Cargo.toml and README.md
+- Set rust toolchain
+
 ## [0.1.0] - 2024-05-22
 
 ### Added
