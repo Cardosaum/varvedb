@@ -29,12 +29,14 @@ VarveDB provides a persistent, ACID-compliant event log optimized for high-throu
 
 ## Installation
 
+Add this to your `Cargo.toml`:
+
 ```toml
 [dependencies]
-varvedb = { path = "." } # Or git URL
+varvedb = "0.1"
 ```
 
-## Usage
+## Getting Started
 
 ### Basic Operation
 
@@ -149,6 +151,16 @@ VarveDB supports optional encryption at rest using **AES-256-GCM**.
 *   **AAD Binding**: Encryption is bound to `StreamID` + `Sequence` to prevent replay attacks.
 *   **Stream ID Leakage**: Stream IDs are stored in plaintext for indexing efficiency.
 
+## Supported Rust Versions
+
+VarveDB is built against the latest stable release. The minimum supported version is 1.75. The current policy is that the minimum Rust version required to use this crate can be increased in minor version updates. For example, if `crate 1.0` requires Rust 1.20.0, then `crate 1.0.z` for all values of `z` will also require Rust 1.20.0 or newer. However, `crate 1.1` may require Rust 1.22.0.
+
+## Contributing
+
+🎈 Thanks for your help improving the project! We are so happy to have you!
+
+We have a contributing guide to help you get involved in the VarveDB project.
+
 ## License
 
-MPL-2.0
+This project is licensed under the [Mozilla Public License 2.0](LICENSE).
