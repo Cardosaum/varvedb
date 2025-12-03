@@ -2,6 +2,7 @@
 import os
 import sys
 import argparse
+import subprocess
 
 LICENSE_HEADER = """// This file is part of VarveDB.
 //
@@ -12,7 +13,35 @@ LICENSE_HEADER = """// This file is part of VarveDB.
 // obtain one at http://mozilla.org/MPL/2.0/.
 """
 
+def get_git_files():
+    """Returns a list of files tracked by git and untracked files not ignored."""
+    files = set()
+    
+    # Get tracked files
+    try:
+        tracked = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+        files.update(tracked)
+    except subprocess.CalledProcessError:
+        print("Error: Not a git repository or git command failed.")
+        sys.exit(1)
+
+    # Get untracked files (respecting .gitignore)
+    try:
+        untracked = subprocess.check_output(
+            ["git", "ls-files", "--others", "--exclude-standard"], 
+            text=True
+        ).splitlines()
+        files.update(untracked)
+    except subprocess.CalledProcessError:
+        pass # Ignore if this fails, just use tracked
+
+    return sorted(list(files))
+
 def check_file(filepath, fix=False):
+    # Skip if file doesn't exist (e.g. deleted but still in git index?)
+    if not os.path.exists(filepath):
+        return True
+
     with open(filepath, 'r') as f:
         content = f.read()
 
@@ -40,18 +69,13 @@ def main():
     parser.add_argument("--fix", action="store_true", help="Apply missing license headers")
     args = parser.parse_args()
 
-    target_dirs = ["src", "tests", "examples", "benches"]
     missing_headers = False
+    files = get_git_files()
 
-    for d in target_dirs:
-        if not os.path.exists(d):
-            continue
-        for root, _, files in os.walk(d):
-            for file in files:
-                if file.endswith(".rs"):
-                    filepath = os.path.join(root, file)
-                    if not check_file(filepath, fix=args.fix):
-                        missing_headers = True
+    for file_path in files:
+        if file_path.endswith(".rs"):
+            if not check_file(file_path, fix=args.fix):
+                missing_headers = True
 
     if missing_headers and not args.fix:
         print("\nSome files are missing license headers. Run with --fix to add them.")
