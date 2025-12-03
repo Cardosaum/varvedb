@@ -2,7 +2,7 @@
 > **UNDER DEVELOPMENT**: This project is currently in early development and is **NOT** production ready. APIs and storage formats are subject to change.
 
 <div align="center">
-  <img src="assets/logo.svg" height="200" alt="VarveDB Logo">
+  <img src="assets/logo.svg" height="200" alt="VarveDB Logo" style="background-color: white;">
   <h1>VarveDB</h1>
   <p>
     <strong>A high-performance, embedded, append-only event store for Rust.</strong>

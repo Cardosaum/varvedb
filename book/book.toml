@@ -7,3 +7,5 @@ title = "VarveDB Documentation"
 
 [output.html]
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
+additional-css = ["src/custom.css"]
+logo = "src/logo.svg"

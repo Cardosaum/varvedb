@@ -1,3 +1,6 @@
+> [!WARNING]
+> **UNDER DEVELOPMENT**: This project is currently in early development and is **NOT** production ready. APIs and storage formats are subject to change.
+
 # Introduction
 
 **VarveDB** is a high-performance, embedded, append-only event store for Rust. It is designed to provide a persistent, ACID-compliant event log optimized for high-throughput event sourcing applications.
