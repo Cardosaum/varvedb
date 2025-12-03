@@ -3,6 +3,7 @@ name = "varvedb"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+authors = ["Matheus Cardoso <varvedb@matheus.sbs>"]
 description = "A high-performance, embedded, append-only event store for Rust."
 repository = "https://github.com/Cardosaum/varvedb"
 documentation = "https://docs.rs/varvedb"
