@@ -62,6 +62,7 @@
 //! # }
 //! ```
 
+pub mod constants;
 pub mod crypto;
 pub mod engine;
 pub mod error;

@@ -50,7 +50,12 @@ pub struct Writer<E> {
 
 impl<E> Writer<E>
 where
-    E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<1024>>,
+    E: rkyv::Archive
+        + rkyv::Serialize<
+            rkyv::ser::serializers::AllocSerializer<
+                { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE },
+            >,
+        >,
 {
     /// Creates a new `Writer` instance.
     pub fn new(storage: Storage) -> Self {
@@ -92,7 +97,12 @@ impl<E> Clone for Writer<E> {
 }
 impl<E> Writer<E>
 where
-    E: rkyv::Archive + rkyv::Serialize<rkyv::ser::serializers::AllocSerializer<1024>>,
+    E: rkyv::Archive
+        + rkyv::Serialize<
+            rkyv::ser::serializers::AllocSerializer<
+                { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE },
+            >,
+        >,
 {
     /// Appends a new event to a stream.
     ///
@@ -151,22 +161,24 @@ where
         let new_seq = last_seq + 1;
 
         // Serialize Event
-        let bytes = rkyv::to_bytes::<_, 1024>(&event)
-            .map_err(|e| crate::error::Error::EventSerialization(e.to_string()))?;
+        let bytes =
+            rkyv::to_bytes::<_, { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE }>(&event)
+                .map_err(|e| crate::error::Error::EventSerialization(e.to_string()))?;
 
         // Encrypt if enabled
         let final_bytes = if let Some(km) = &self.key_manager {
             let key = km.get_or_create_key_with_txn(&mut txn, stream_id)?;
 
             // Construct AAD: StreamID (16 bytes) + GlobalSeq (8 bytes)
-            let mut aad = Vec::with_capacity(24);
+            let mut aad = Vec::with_capacity(crate::constants::AAD_CAPACITY);
             aad.extend_from_slice(&stream_id.to_be_bytes());
             aad.extend_from_slice(&new_seq.to_be_bytes());
 
             let mut encrypted = crypto::encrypt(&key, &bytes, &aad)?;
 
             // Prepend StreamID (16 bytes) to allow Reader to find the key
-            let mut final_vec = Vec::with_capacity(16 + encrypted.len());
+            let mut final_vec =
+                Vec::with_capacity(crate::constants::STREAM_ID_SIZE + encrypted.len());
             final_vec.extend_from_slice(&stream_id.to_be_bytes());
             final_vec.append(&mut encrypted);
             final_vec
@@ -332,14 +344,14 @@ where
             Some(bytes) => {
                 let data = if let Some(km) = &self.key_manager {
                     // Expect: [StreamID (16)][Nonce (12)][Ciphertext]
-                    if bytes.len() < 28 {
+                    if bytes.len() < crate::constants::ENCRYPTED_EVENT_MIN_SIZE {
                         return Err(crate::error::Error::InvalidEncryptedEventLength {
                             actual: bytes.len(),
-                            minimum: 28,
+                            minimum: crate::constants::ENCRYPTED_EVENT_MIN_SIZE,
                         });
                     }
 
-                    let (stream_id_bytes, rest) = bytes.split_at(16);
+                    let (stream_id_bytes, rest) = bytes.split_at(crate::constants::STREAM_ID_SIZE);
                     let stream_id = u128::from_be_bytes(stream_id_bytes.try_into().unwrap());
 
                     let key = km
@@ -347,7 +359,7 @@ where
                         .ok_or_else(|| crate::error::Error::KeyNotFound(stream_id))?;
 
                     // AAD: StreamID + Seq
-                    let mut aad = Vec::with_capacity(24);
+                    let mut aad = Vec::with_capacity(crate::constants::AAD_CAPACITY);
                     aad.extend_from_slice(stream_id_bytes);
                     aad.extend_from_slice(&seq.to_be_bytes());
 
@@ -429,8 +441,10 @@ pub struct ProcessorConfig {
 impl Default for ProcessorConfig {
     fn default() -> Self {
         Self {
-            batch_size: 100,
-            batch_timeout: std::time::Duration::from_millis(100),
+            batch_size: crate::constants::DEFAULT_BATCH_SIZE,
+            batch_timeout: std::time::Duration::from_millis(
+                crate::constants::DEFAULT_BATCH_TIMEOUT_MS,
+            ),
         }
     }
 }

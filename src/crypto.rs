@@ -38,7 +38,7 @@ use zeroize::Zeroizing;
 /// let config = StorageConfig {
 ///     path: dir.path().to_path_buf(),
 ///     encryption_enabled: true,
-///     master_key: Some(zeroize::Zeroizing::new([0u8; 32])),
+///     master_key: Some(zeroize::Zeroizing::new([0u8; varvedb::constants::KEY_SIZE])),
 ///     ..Default::default()
 /// };
 /// let storage = Storage::open(config)?;
@@ -61,7 +61,7 @@ impl KeyManager {
         Self { storage }
     }
 
-    fn get_master_key(&self) -> crate::error::Result<&[u8; 32]> {
+    fn get_master_key(&self) -> crate::error::Result<&[u8; crate::constants::KEY_SIZE]> {
         self.storage
             .config
             .master_key
@@ -69,7 +69,10 @@ impl KeyManager {
             .ok_or_else(|| crate::error::Error::KeyNotFound(0)) // 0 for master key
     }
 
-    pub fn get_or_create_key(&self, stream_id: u128) -> crate::error::Result<Zeroizing<[u8; 32]>> {
+    pub fn get_or_create_key(
+        &self,
+        stream_id: u128,
+    ) -> crate::error::Result<Zeroizing<[u8; crate::constants::KEY_SIZE]>> {
         let mut txn = self.storage.env.write_txn()?;
         let key = self.get_or_create_key_with_txn(&mut txn, stream_id)?;
         txn.commit()?;
@@ -80,7 +83,7 @@ impl KeyManager {
         &self,
         txn: &mut heed::RwTxn,
         stream_id: u128,
-    ) -> crate::error::Result<Zeroizing<[u8; 32]>> {
+    ) -> crate::error::Result<Zeroizing<[u8; crate::constants::KEY_SIZE]>> {
         match self.storage.keystore.get(txn, &stream_id)? {
             Some(encrypted_key_bytes) => {
                 // Decrypt existing key
@@ -88,11 +91,11 @@ impl KeyManager {
                 let aad = stream_id.to_be_bytes(); // Bind key to StreamID
                 let plaintext_key_vec = decrypt(master_key, encrypted_key_bytes, &aad)?;
 
-                let mut key = Zeroizing::new([0u8; 32]);
-                if plaintext_key_vec.len() != 32 {
+                let mut key = Zeroizing::new([0u8; crate::constants::KEY_SIZE]);
+                if plaintext_key_vec.len() != crate::constants::KEY_SIZE {
                     return Err(crate::error::Error::InvalidKeyLength {
                         actual: plaintext_key_vec.len(),
-                        expected: 32,
+                        expected: crate::constants::KEY_SIZE,
                     });
                 }
                 key.copy_from_slice(&plaintext_key_vec);
@@ -100,7 +103,7 @@ impl KeyManager {
             }
             None => {
                 // Generate new key
-                let mut key = Zeroizing::new([0u8; 32]);
+                let mut key = Zeroizing::new([0u8; crate::constants::KEY_SIZE]);
                 OsRng.fill_bytes(&mut *key);
 
                 // Encrypt with Master Key
@@ -114,7 +117,10 @@ impl KeyManager {
         }
     }
 
-    pub fn get_key(&self, stream_id: u128) -> crate::error::Result<Option<Zeroizing<[u8; 32]>>> {
+    pub fn get_key(
+        &self,
+        stream_id: u128,
+    ) -> crate::error::Result<Option<Zeroizing<[u8; crate::constants::KEY_SIZE]>>> {
         let txn = self.storage.env.read_txn()?;
         self.get_key_with_txn(&txn, stream_id)
     }
@@ -123,18 +129,18 @@ impl KeyManager {
         &self,
         txn: &heed::RoTxn,
         stream_id: u128,
-    ) -> crate::error::Result<Option<Zeroizing<[u8; 32]>>> {
+    ) -> crate::error::Result<Option<Zeroizing<[u8; crate::constants::KEY_SIZE]>>> {
         match self.storage.keystore.get(txn, &stream_id)? {
             Some(encrypted_key_bytes) => {
                 let master_key = self.get_master_key()?;
                 let aad = stream_id.to_be_bytes();
                 let plaintext_key_vec = decrypt(master_key, encrypted_key_bytes, &aad)?;
 
-                let mut key = Zeroizing::new([0u8; 32]);
-                if plaintext_key_vec.len() != 32 {
+                let mut key = Zeroizing::new([0u8; crate::constants::KEY_SIZE]);
+                if plaintext_key_vec.len() != crate::constants::KEY_SIZE {
                     return Err(crate::error::Error::InvalidKeyLength {
                         actual: plaintext_key_vec.len(),
-                        expected: 32,
+                        expected: crate::constants::KEY_SIZE,
                     });
                 }
                 key.copy_from_slice(&plaintext_key_vec);
@@ -173,9 +179,13 @@ impl KeyManager {
 /// # Errors
 ///
 /// Returns an error if encryption fails (e.g., internal crypto error).
-pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Result<Vec<u8>> {
+pub fn encrypt(
+    key: &[u8; crate::constants::KEY_SIZE],
+    plaintext: &[u8],
+    aad: &[u8],
+) -> crate::error::Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-    let mut nonce_bytes = [0u8; 12];
+    let mut nonce_bytes = [0u8; crate::constants::NONCE_SIZE];
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -210,18 +220,18 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> crate::error::Re
 /// *   The input is too short (less than 12 bytes).
 /// *   Decryption fails (e.g., invalid key, tampered ciphertext, or AAD mismatch).
 pub fn decrypt(
-    key: &[u8; 32],
+    key: &[u8; crate::constants::KEY_SIZE],
     ciphertext_with_nonce: &[u8],
     aad: &[u8],
 ) -> crate::error::Result<Vec<u8>> {
-    if ciphertext_with_nonce.len() < 12 {
+    if ciphertext_with_nonce.len() < crate::constants::NONCE_SIZE {
         return Err(crate::error::Error::InvalidCiphertextLength {
             actual: ciphertext_with_nonce.len(),
-            minimum: 12,
+            minimum: crate::constants::NONCE_SIZE,
         });
     }
 
-    let (nonce_bytes, ciphertext) = ciphertext_with_nonce.split_at(12);
+    let (nonce_bytes, ciphertext) = ciphertext_with_nonce.split_at(crate::constants::NONCE_SIZE);
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let nonce = Nonce::from_slice(nonce_bytes);
 
