@@ -13,5 +13,5 @@ Add fuzz tests to ensure the system handles arbitrary input gracefully.
 - Fuzz the `Writer::append` method with random inputs.
 
 ## Acceptance Criteria
-- [ ] Fuzz targets defined.
-- [ ] Fuzzing runs without crashing (panics are acceptable if safe, but no UB).
+- [x] Fuzz targets defined.
+- [x] Fuzzing runs without crashing (panics are acceptable if safe, but no UB).
