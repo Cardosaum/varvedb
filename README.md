@@ -1,15 +1,20 @@
-# VarveDB
-
 > [!WARNING]
 > **UNDER DEVELOPMENT**: This project is currently in early development and is **NOT** production ready. APIs and storage formats are subject to change.
 
+<div align="center">
+  <img src="assets/logo.svg" height="200" alt="VarveDB Logo">
+  <h1>VarveDB</h1>
+  <p>
+    <strong>A high-performance, embedded, append-only event store for Rust.</strong>
+  </p>
 
-[![CI](https://github.com/Cardosaum/varvedb/actions/workflows/ci.yml/badge.svg)](https://github.com/Cardosaum/varvedb/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/varvedb.svg)](https://crates.io/crates/varvedb)
-[![Docs.rs](https://docs.rs/varvedb/badge.svg)](https://docs.rs/varvedb)
-[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-
-A high-performance, embedded, append-only event store for Rust.
+  <p>
+    <a href="https://github.com/Cardosaum/varvedb/actions/workflows/ci.yml"><img src="https://github.com/Cardosaum/varvedb/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://crates.io/crates/varvedb"><img src="https://img.shields.io/crates/v/varvedb.svg" alt="Crates.io"></a>
+    <a href="https://docs.rs/varvedb"><img src="https://docs.rs/varvedb/badge.svg" alt="Docs.rs"></a>
+    <a href="https://opensource.org/licenses/MPL-2.0"><img src="https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg" alt="License: MPL 2.0"></a>
+  </p>
+</div>
 
 VarveDB provides a persistent, ACID-compliant event log optimized for high-throughput event sourcing. It leverages **LMDB** for reliable storage and **rkyv** for zero-copy deserialization, ensuring minimal overhead.
 
