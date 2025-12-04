@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-12-04
+
+### Features
+
+- Add `get_by_stream` method to Reader for stream-specific event retrieval and provide an example for its usage.
+
+### Miscellaneous Tasks
+
+- Add copyright notice and licensing information to read_stream example file
+
+### Performance
+
+- Construct AAD using a fixed-size array instead of a dynamic Vec for improved efficiency.
+
+### Refactor
+
+- Change consumer name to consumer ID by hashing for Processor initialization in chat and tests
+- Update struct derivations to include Debug trait for improved logging and debugging
+
 ## [0.2.0] - 2025-12-03
 
 ### Documentation
