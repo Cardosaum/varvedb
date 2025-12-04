@@ -50,7 +50,7 @@ use zeroize::Zeroizing;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct KeyManager {
     storage: Storage,
 }

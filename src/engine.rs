@@ -43,6 +43,7 @@ use std::sync::Arc;
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct Writer<E> {
     storage: Storage,
     metrics: Option<Arc<VarveMetrics>>,

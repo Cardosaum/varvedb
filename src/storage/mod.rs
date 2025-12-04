@@ -38,7 +38,7 @@ impl StreamKey {
 /// Configuration for opening a VarveDB storage environment.
 ///
 /// This struct controls the physical layout and behavior of the underlying LMDB environment.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct StorageConfig {
     /// The directory where the database files will be stored.
     ///
@@ -93,7 +93,7 @@ impl Default for StorageConfig {
 /// `Storage` wraps the LMDB environment and provides access to the internal databases (buckets).
 /// It is cheap to clone and shares the underlying environment handle, making it suitable for
 /// concurrent access across threads.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Storage {
     /// The raw LMDB environment.
     pub env: Env,
