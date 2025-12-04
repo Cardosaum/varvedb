@@ -194,9 +194,9 @@ where
             let key = km.get_or_create_key_with_txn(&mut txn, stream_id)?;
 
             // Construct AAD: StreamID (16 bytes) + GlobalSeq (8 bytes)
-            let mut aad = Vec::with_capacity(crate::constants::AAD_CAPACITY);
-            aad.extend_from_slice(&stream_id.to_be_bytes());
-            aad.extend_from_slice(&new_seq.to_be_bytes());
+            let mut aad = [0u8; crate::constants::AAD_CAPACITY];
+            aad[..crate::constants::STREAM_ID_SIZE].copy_from_slice(&stream_id.to_be_bytes());
+            aad[crate::constants::STREAM_ID_SIZE..].copy_from_slice(&new_seq.to_be_bytes());
 
             let mut encrypted = crypto::encrypt(&key, &bytes, &aad)?;
 
