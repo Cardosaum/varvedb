@@ -62,8 +62,12 @@ async fn test_processor_txn_reuse() -> Result<(), Box<dyn std::error::Error>> {
         batch_timeout: Duration::from_millis(100),
     };
 
-    let mut processor =
-        Processor::new(reader, handler, "txn_reuse_consumer", rx).with_config(config);
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    "txn_reuse_consumer".hash(&mut hasher);
+    let consumer_id = hasher.finish();
+
+    let mut processor = Processor::new(reader, handler, consumer_id, rx).with_config(config);
 
     // 3. Run processor in background
     // This spawn verifies that the future is Send

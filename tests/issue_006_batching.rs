@@ -62,7 +62,12 @@ async fn test_processor_batching() -> Result<(), Box<dyn std::error::Error>> {
         batch_timeout: Duration::from_secs(1),
     };
 
-    let mut processor = Processor::new(reader, handler, "batch_consumer", rx).with_config(config);
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    "batch_consumer".hash(&mut hasher);
+    let consumer_id = hasher.finish();
+
+    let mut processor = Processor::new(reader, handler, consumer_id, rx).with_config(config);
 
     // 3. Run processor in background
     let handle = tokio::spawn(async move { processor.run().await });

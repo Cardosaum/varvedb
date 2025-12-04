@@ -56,12 +56,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rx = writer.subscribe();
 
     // Start Processor
+    // Start Processor
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    "chat_client".hash(&mut hasher);
+    let consumer_id = hasher.finish();
+
     let mut processor = Processor::new(
         reader,
         ChatHandler {
             name: "ClientView".to_string(),
         },
-        "chat_client",
+        consumer_id,
         rx,
     );
 

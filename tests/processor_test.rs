@@ -57,7 +57,12 @@ async fn test_processor_reactive() -> Result<(), Box<dyn std::error::Error>> {
         received: received.clone(),
     };
 
-    let mut processor = Processor::new(reader, handler, "test_consumer", rx);
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    "test_consumer".hash(&mut hasher);
+    let consumer_id = hasher.finish();
+
+    let mut processor = Processor::new(reader, handler, consumer_id, rx);
 
     // Spawn processor in background
     tokio::spawn(async move {

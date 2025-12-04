@@ -597,22 +597,17 @@ where
 {
     /// Creates a new `Processor`.
     ///
-    /// *   `consumer_name`: A unique identifier for this consumer. Used to persist the cursor position.
+    /// *   `consumer_id`: A unique identifier for this consumer. Used to persist the cursor position.
     pub fn new(
         reader: Reader<E>,
         handler: H,
-        consumer_name: &str,
+        consumer_id: impl Into<u64>,
         rx: tokio::sync::watch::Receiver<u64>,
     ) -> Self {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        consumer_name.hash(&mut hasher);
-        let consumer_id = hasher.finish();
-
         Self {
             reader,
             handler,
-            consumer_id,
+            consumer_id: consumer_id.into(),
             rx,
             config: ProcessorConfig::default(),
         }
