@@ -464,6 +464,64 @@ where
             None => Ok(None),
         }
     }
+
+    /// Retrieves an event by its stream ID and version (sequence number in the stream).
+    ///
+    /// This method looks up the global sequence number for the given stream and version,
+    /// and then retrieves the event using `get`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use varvedb::engine::{Writer, Reader};
+    /// # use varvedb::storage::{Storage, StorageConfig};
+    /// # use rkyv::{Archive, Serialize, Deserialize};
+    /// # use tempfile::tempdir;
+    /// #
+    /// # #[derive(Archive, Serialize, Deserialize, Debug)]
+    /// # #[archive(check_bytes)]
+    /// # #[archive_attr(derive(Debug))]
+    /// # struct MyEvent { pub data: u32 }
+    /// #
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let dir = tempdir()?;
+    /// # let config = StorageConfig { path: dir.path().to_path_buf(), ..Default::default() };
+    /// # let storage = Storage::open(config)?;
+    /// # let mut writer = Writer::new(storage.clone());
+    /// # writer.append(1, 1, MyEvent { data: 42 })?;
+    /// #
+    /// let reader = Reader::<MyEvent>::new(storage.clone());
+    /// let txn = storage.env.read_txn()?;
+    /// if let Some(event) = reader.get_by_stream(&txn, 1, 1)? {
+    ///     println!("Event: {:?}", event);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// For more examples, see the [examples directory](https://github.com/Cardosaum/varvedb/tree/main/examples).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// *   The underlying storage encounters an I/O error.
+    /// *   The event retrieval fails (see `get` errors).
+    pub fn get_by_stream<'txn>(
+        &self,
+        txn: &'txn heed::RoTxn,
+        stream_id: u128,
+        version: u32,
+    ) -> crate::error::Result<Option<EventView<'txn, E>>> {
+        let key = crate::storage::StreamKey::new(stream_id, version);
+        let key_bytes = key.to_be_bytes();
+
+        self.storage
+            .stream_index
+            .get(txn, key_bytes.as_slice())?
+            .map(|seq| self.get(txn, seq))
+            .transpose()
+            .map(Option::flatten)
+    }
 }
 
 pub trait EventHandler<E>
@@ -678,5 +736,55 @@ where
         }
 
         Ok(current_seq)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StorageConfig;
+    use rkyv::{Archive, Deserialize, Serialize};
+    use tempfile::tempdir;
+
+    #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
+    #[archive(check_bytes)]
+    #[archive_attr(derive(Debug))]
+    struct TestEvent {
+        value: u32,
+    }
+
+    #[test]
+    fn test_get_by_stream() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let config = StorageConfig {
+            path: dir.path().to_path_buf(),
+            ..Default::default()
+        };
+        let storage = Storage::open(config)?;
+        let mut writer = Writer::<TestEvent>::new(storage.clone());
+        let reader = Reader::<TestEvent>::new(storage.clone());
+
+        // Append events
+        writer.append(1, 1, TestEvent { value: 10 })?;
+        writer.append(1, 2, TestEvent { value: 20 })?;
+        writer.append(2, 1, TestEvent { value: 30 })?;
+
+        let txn = storage.env.read_txn()?;
+
+        // Test existing events
+        let event1 = reader.get_by_stream(&txn, 1, 1)?.unwrap();
+        assert_eq!(event1.value, 10);
+
+        let event2 = reader.get_by_stream(&txn, 1, 2)?.unwrap();
+        assert_eq!(event2.value, 20);
+
+        let event3 = reader.get_by_stream(&txn, 2, 1)?.unwrap();
+        assert_eq!(event3.value, 30);
+
+        // Test non-existing events
+        assert!(reader.get_by_stream(&txn, 1, 3)?.is_none());
+        assert!(reader.get_by_stream(&txn, 3, 1)?.is_none());
+
+        Ok(())
     }
 }
