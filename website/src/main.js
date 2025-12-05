@@ -23,6 +23,11 @@ import './css/sections/features.css';
 import './css/sections/architecture.css';
 import './css/sections/code-window.css';
 
+import { initHero3D } from './js/hero-3d.js';
+
+// Initialize 3D Hero
+initHero3D();
+
 // Simple intersection observer for fade-in animations
 const observerOptions = {
   root: null,

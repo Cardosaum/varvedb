@@ -2,11 +2,25 @@
   padding: 8rem 0 6rem;
   text-align: center;
   border-bottom: 1px solid #21262d;
+  position: relative; /* Ensure relative positioning for absolute children */
+  overflow: hidden; /* Clip the canvas if it overflows */
+}
+
+#hero-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0; /* Behind content */
+  pointer-events: none; /* Let clicks pass through */
 }
 
 .hero-content {
   max-width: 800px;
   margin: 0 auto;
+  position: relative;
+  z-index: 1; /* Above canvas */
 }
 
 .hero-logo {

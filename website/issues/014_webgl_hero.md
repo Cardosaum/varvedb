@@ -1,6 +1,6 @@
 # Add 3D/WebGL Hero Elements
 
-**Status:** Open
+**Status:** Closed
 **Priority:** Low
 **Tags:** design, wow-factor
 
