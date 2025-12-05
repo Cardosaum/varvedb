@@ -1,0 +1,253 @@
+@import './style.css';
+
+:root {
+  --sidebar-width: 280px;
+  --header-height: 60px;
+}
+
+/* Layout Overrides */
+body {
+  overflow-y: auto; /* Ensure scrolling works */
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Docs Navbar */
+.docs-nav {
+  height: var(--header-height);
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: rgba(15, 17, 23, 0.95);
+  backdrop-filter: blur(12px);
+  z-index: 1000;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+}
+
+.docs-menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  cursor: pointer;
+  padding: 0.5rem;
+}
+
+.docs-menu-toggle svg {
+  width: 24px;
+  height: 24px;
+}
+
+.docs-nav .logo {
+  font-size: 1.1rem;
+}
+
+.docs-nav .logo img {
+  height: 24px;
+}
+
+/* Main Layout */
+.docs-layout {
+  display: flex;
+  margin-top: var(--header-height);
+  min-height: calc(100vh - var(--header-height));
+}
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  position: fixed;
+  top: var(--header-height);
+  left: 0;
+  bottom: 0;
+  background: #0d1117;
+  border-right: 1px solid #30363d;
+  padding: 2rem;
+  overflow-y: auto;
+  z-index: 900;
+}
+
+.sidebar-group {
+  margin-bottom: 2rem;
+}
+
+.sidebar-group h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 0.5rem 0;
+  color: #c9d1d9;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+  border-left: 2px solid transparent;
+  padding-left: 1rem;
+  margin-left: -1rem;
+}
+
+.sidebar-link:hover {
+  color: var(--primary);
+}
+
+.sidebar-link.active {
+  color: var(--primary);
+  border-left-color: var(--primary);
+  font-weight: 600;
+}
+
+/* Content Area */
+.docs-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  padding: 3rem 4rem 6rem;
+  max-width: 1000px;
+}
+
+article {
+  color: #c9d1d9;
+  line-height: 1.7;
+}
+
+/* Typography & Markdown Styles */
+article h1 {
+  font-family: var(--font-heading);
+  font-size: 2.5rem;
+  margin-bottom: 2rem;
+  color: var(--text-main);
+  border-bottom: 1px solid #30363d;
+  padding-bottom: 1rem;
+}
+
+article h2 {
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  margin-top: 3rem;
+  margin-bottom: 1.5rem;
+  color: var(--text-main);
+}
+
+article h3 {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  color: #f0f6fc;
+}
+
+article p {
+  margin-bottom: 1.5rem;
+  font-size: 1.05rem;
+}
+
+article ul, article ol {
+  margin-bottom: 1.5rem;
+  padding-left: 1.5rem;
+}
+
+article li {
+  margin-bottom: 0.5rem;
+}
+
+article strong {
+  color: #f0f6fc;
+  font-weight: 600;
+}
+
+article a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+article a:hover {
+  text-decoration: underline;
+}
+
+/* Code Blocks */
+article pre {
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+  border: 1px solid #30363d;
+}
+
+article pre code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: transparent !important; /* Let highlight.js handle bg */
+  padding: 0;
+}
+
+article p code, article li code {
+  background: rgba(110, 118, 129, 0.4);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* Alerts / Blockquotes */
+article blockquote {
+  border-left: 4px solid #30363d;
+  padding-left: 1rem;
+  margin-left: 0;
+  margin-bottom: 1.5rem;
+  color: var(--text-muted);
+}
+
+.alert {
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  border: 1px solid transparent;
+}
+
+.alert-warning {
+  background: rgba(210, 153, 34, 0.15);
+  border-color: rgba(210, 153, 34, 0.4);
+  color: #e3b341;
+}
+
+.alert-title {
+  font-weight: 700;
+  display: block;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .docs-menu-toggle {
+    display: block;
+    margin-right: auto;
+    margin-left: 1rem;
+  }
+
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+  
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  
+  .docs-content {
+    margin-left: 0;
+    padding: 2rem;
+  }
+}
