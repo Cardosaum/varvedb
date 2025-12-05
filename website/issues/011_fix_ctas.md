@@ -1,6 +1,6 @@
 # Fix Call to Actions (CTAs)
 
-**Status:** Open
+**Status:** Closed
 **Priority:** Medium
 **Tags:** ux, copy
 

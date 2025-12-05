@@ -1,6 +1,6 @@
 # Copy: "Military-Grade" -> "Authenticated Encryption"
 
-**Status:** Open
+**Status:** Closed
 **Priority:** Low
 **Tags:** copy, professionalism
 
