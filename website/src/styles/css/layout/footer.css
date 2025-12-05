@@ -36,7 +36,7 @@ footer {
 
 .copyright {
   text-align: center;
-  color: #484f58;
+  color: var(--text-muted);
   padding-top: 2rem;
   border-top: 1px solid #21262d;
   font-size: 0.85rem;

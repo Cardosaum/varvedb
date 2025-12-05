@@ -1,6 +1,6 @@
 # Improve Accessibility (Color Contrast)
 
-**Status:** Open
+**Status:** Closed
 **Priority:** Medium
 **Tags:** accessibility, a11y, design
 

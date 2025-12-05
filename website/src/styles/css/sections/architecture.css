@@ -38,15 +38,46 @@
 }
 
 /* Interactive States */
+/* Interactive States */
 .arch-box.highlight, .arch-component.highlight {
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 20px var(--highlight-color, #38bdf8);
   transform: scale(1.02);
-  border-color: #38bdf8;
+  border-color: var(--highlight-color, #38bdf8);
   z-index: 10;
+  opacity: 1 !important;
+  filter: none !important;
+  color: #f0f6fc; /* Ensure text is bright white */
+}
+
+/* Specific overrides for colored boxes to keep their theme when highlighted, 
+   but ensure they are bright */
+.arch-box.user.highlight {
+  color: #38bdf8;
+}
+
+.arch-box.storage.highlight {
+  color: #fbbf24;
+}
+
+.code-line {
+  display: block;
+  transition: all 0.3s ease;
+  border-radius: 4px;
+  margin: 0 -0.5rem;
+  padding: 0 0.5rem;
+}
+
+.code-line.highlight {
+  background: rgba(56, 189, 248, 0.15);
+  box-shadow: inset 3px 0 0 var(--highlight-color, #38bdf8);
+}
+
+.code-line.dim {
+  opacity: 0.3;
 }
 
 .arch-box.dim, .arch-component.dim {
-  opacity: 0.3;
+  opacity: 0.5;
   filter: grayscale(100%);
 }
 

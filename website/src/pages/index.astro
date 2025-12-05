@@ -98,16 +98,16 @@ import '../styles/css/sections/code-window.css';
           <pre is:raw><code><span class="keyword">use</span> varvedb::Varve;
 
 <span class="keyword">fn</span> <span class="function">main</span>() -> <span class="type">Result</span><(), <span class="type">Error</span>> {
-  <span class="comment">// Initialize the store</span>
-  <span class="keyword">let</span> db = <span class="type">Varve</span>::<span class="function">open</span>(<span class="string">"./data"</span>)?;
+<span class="code-line" data-related-id="varvedb">  <span class="comment">// Initialize the store</span></span>
+<span class="code-line" data-related-id="varvedb">  <span class="keyword">let</span> db = <span class="type">Varve</span>::<span class="function">open</span>(<span class="string">"./data"</span>)?;</span>
 
-  <span class="comment">// Append an event (Zero-Copy)</span>
-  db.<span class="function">append</span>(<span class="type">Event</span>::new(<span class="string">"user_created"</span>, payload))?;
+<span class="code-line" data-related-id="writer">  <span class="comment">// Append an event (Zero-Copy)</span></span>
+<span class="code-line" data-related-id="writer">  db.<span class="function">append</span>(<span class="type">Event</span>::new(<span class="string">"user_created"</span>, payload))?;</span>
 
-  <span class="comment">// Read events instantly</span>
-  <span class="keyword">for</span> event <span class="keyword">in</span> db.<span class="function">iter</span>() {
-      <span class="function">println!</span>(<span class="string">"Event: {:?}"</span>, event);
-  }
+<span class="code-line" data-related-id="reader">  <span class="comment">// Read events instantly</span></span>
+<span class="code-line" data-related-id="reader">  <span class="keyword">for</span> event <span class="keyword">in</span> db.<span class="function">iter</span>() {</span>
+<span class="code-line" data-related-id="reader">      <span class="function">println!</span>(<span class="string">"Event: {:?}"</span>, event);</span>
+<span class="code-line" data-related-id="reader">  }</span>
   <span class="keyword">Ok</span>(())
 }</code></pre>
         </div>
@@ -156,23 +156,57 @@ import '../styles/css/sections/code-window.css';
 
   // Interactive Diagram
   const components = document.querySelectorAll('.arch-component, .arch-box');
+  const codeLines = document.querySelectorAll('.code-line');
+
   components.forEach(comp => {
-    comp.addEventListener('mouseenter', () => {
+    comp.addEventListener('mouseenter', (e) => {
+      e.stopPropagation();
+      
       const id = comp.getAttribute('data-id');
       if (!id) return;
       
+      // Determine highlight color
+      let color = '#38bdf8'; // Default Cyan
+      if (comp.classList.contains('storage')) color = '#fbbf24'; // Yellow
+      
+      // Set CSS variable for highlight color
+      document.documentElement.style.setProperty('--highlight-color', color);
+
+      // Highlight Diagram Components
       components.forEach(c => {
-        if (c === comp) {
+        c.classList.remove('highlight', 'dim'); // Reset state
+        
+        if (c === comp || c.getAttribute('data-id') === id) {
           c.classList.add('highlight');
+        } else if (c.contains(comp)) {
+          // If this component contains the hovered one (e.g. Engine contains Writer),
+          // do NOT dim it, but don't highlight it either.
+          // This ensures the parent doesn't fade out, which would fade out the child too.
         } else {
           c.classList.add('dim');
+        }
+      });
+
+      // Highlight Code Lines
+      codeLines.forEach(line => {
+        line.classList.remove('highlight', 'dim'); // Reset state
+        if (line.getAttribute('data-related-id') === id) {
+          line.classList.add('highlight');
+        } else {
+          line.classList.add('dim');
         }
       });
     });
 
     comp.addEventListener('mouseleave', () => {
+      // Reset Diagram
       components.forEach(c => {
         c.classList.remove('highlight', 'dim');
+      });
+
+      // Reset Code
+      codeLines.forEach(line => {
+        line.classList.remove('highlight', 'dim');
       });
     });
   });

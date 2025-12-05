@@ -9,7 +9,7 @@
   --accent: #fbbf24;
   
   --text-main: #f0f6fc;
-  --text-muted: #8b949e;
+  --text-muted: #9ca3af; /* Lightened from #8b949e for better contrast */
   
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-heading: 'Outfit', sans-serif;
