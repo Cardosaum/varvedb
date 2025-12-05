@@ -12,8 +12,7 @@ use varvedb::engine::{Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-#[archive(check_bytes)]
-#[archive_attr(derive(Debug, PartialEq))]
+#[rkyv(derive(Debug, PartialEq))]
 struct SecretEvent {
     pub secret_data: String,
 }

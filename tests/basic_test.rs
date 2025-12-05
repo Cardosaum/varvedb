@@ -13,14 +13,12 @@ use rkyv::{Archive, Deserialize, Serialize};
 use tempfile::tempdir;
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub enum SystemEvent {
     V1(EventV1),
 }
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub struct EventV1 {
     pub stream_id: u128,

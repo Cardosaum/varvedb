@@ -8,10 +8,17 @@
 
 use crate::model::Payload;
 use crate::storage::Storage;
+use rkyv::bytecheck::CheckBytes;
 use sha2::{Digest, Sha256};
 
 use crate::crypto::{self, KeyManager};
 use crate::metrics::VarveMetrics;
+use rkyv::api::high::{HighSerializer, HighValidator};
+use rkyv::rancor::Error as RancorError;
+use rkyv::ser::allocator::ArenaHandle;
+use rkyv::util::AlignedVec;
+use rkyv::Portable;
+
 use std::sync::Arc;
 
 /// Appends events to the store with optimistic concurrency control.
@@ -29,8 +36,7 @@ use std::sync::Arc;
 /// use tempfile::tempdir;
 ///
 /// #[derive(Archive, Serialize, Deserialize, Debug)]
-/// #[archive(check_bytes)]
-/// #[archive_attr(derive(Debug))]
+/// #[rkyv(derive(Debug))]
 /// struct MyEvent { pub data: u32 }
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,11 +60,7 @@ pub struct Writer<E> {
 impl<E> Writer<E>
 where
     E: rkyv::Archive
-        + rkyv::Serialize<
-            rkyv::ser::serializers::AllocSerializer<
-                { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE },
-            >,
-        >,
+        + for<'a> rkyv::Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RancorError>>,
 {
     /// Creates a new `Writer` instance.
     pub fn new(storage: Storage) -> Self {
@@ -101,11 +103,7 @@ impl<E> Clone for Writer<E> {
 impl<E> Writer<E>
 where
     E: rkyv::Archive
-        + rkyv::Serialize<
-            rkyv::ser::serializers::AllocSerializer<
-                { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE },
-            >,
-        >,
+        + for<'a> rkyv::Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, RancorError>>,
 {
     /// Appends a new event to a stream.
     ///
@@ -164,9 +162,7 @@ where
         let new_seq = last_seq + 1;
 
         // Serialize Event
-        let event_bytes =
-            rkyv::to_bytes::<_, { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE }>(&event)
-                .map_err(|e| crate::error::Error::EventSerialization(e.to_string()))?;
+        let event_bytes = rkyv::api::high::to_bytes::<rkyv::rancor::Error>(&event)?;
 
         // Check size and determine Payload
         let payload = if event_bytes.len() > crate::constants::MAX_INLINE_SIZE {
@@ -186,9 +182,7 @@ where
         };
 
         // Serialize Payload
-        let bytes =
-            rkyv::to_bytes::<_, { crate::constants::DEFAULT_SERIALIZATION_BUFFER_SIZE }>(&payload)
-                .map_err(|e| crate::error::Error::EventSerialization(e.to_string()))?;
+        let bytes = rkyv::api::high::to_bytes::<rkyv::rancor::Error>(&payload)?;
 
         // Encrypt if enabled
         let final_bytes = if let Some(km) = &self.key_manager {
@@ -252,6 +246,7 @@ where
 impl<'a, E> std::ops::Deref for EventView<'a, E>
 where
     E: rkyv::Archive,
+    E::Archived: Portable,
 {
     type Target = E::Archived;
 
@@ -261,7 +256,9 @@ where
             EventData::Owned(b) => b.as_slice(),
         };
         // Safety: We verify the bytes in Reader::get using rkyv::check_archived_root
-        unsafe { rkyv::archived_root::<E>(bytes) }
+        // unsafe { rkyv::archived_root::<E>(bytes) }
+        // Safety: We verify the bytes in Reader::get using rkyv::access
+        unsafe { rkyv::access_unchecked::<E::Archived>(bytes) }
     }
 }
 
@@ -290,8 +287,7 @@ where
 /// use tempfile::tempdir;
 ///
 /// #[derive(Archive, Serialize, Deserialize, Debug)]
-/// #[archive(check_bytes)]
-/// #[archive_attr(derive(Debug))]
+/// #[rkyv(derive(Debug))]
 /// struct MyEvent { pub data: u32 }
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -319,7 +315,7 @@ pub struct Reader<E> {
 impl<E> Reader<E>
 where
     E: rkyv::Archive,
-    E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
+    E::Archived: for<'a> CheckBytes<HighValidator<'a, RancorError>>,
 {
     /// Creates a new `Reader` instance.
     pub fn new(storage: Storage) -> Self {
@@ -400,14 +396,16 @@ where
                     EventData::Owned(b) => b.as_slice(),
                 };
 
-                let archived_payload = rkyv::check_archived_root::<Payload>(payload_bytes)
-                    .map_err(|e| crate::error::Error::EventValidation(e.to_string()))?;
+                let archived_payload = rkyv::access::<
+                    crate::model::ArchivedPayload,
+                    rkyv::rancor::Error,
+                >(payload_bytes)?;
 
                 let final_data = match archived_payload {
-                    rkyv::Archived::<Payload>::Inline(inline_bytes) => {
+                    crate::model::ArchivedPayload::Inline(inline_bytes) => {
                         EventData::Owned(inline_bytes.as_slice().to_vec())
                     }
-                    rkyv::Archived::<Payload>::BlobRef(hash) => {
+                    crate::model::ArchivedPayload::BlobRef(hash) => {
                         let blob_bytes =
                             self.storage
                                 .blobs
@@ -445,11 +443,10 @@ where
                 };
 
                 // Verify rkyv validity (zero-copy check) of the actual event
-                rkyv::check_archived_root::<E>(match &final_data {
+                rkyv::access::<E::Archived, rkyv::rancor::Error>(match &final_data {
                     EventData::Borrowed(b) => b,
                     EventData::Owned(b) => b.as_slice(),
-                })
-                .map_err(|e| crate::error::Error::EventValidation(e.to_string()))?;
+                })?;
 
                 let view = EventView {
                     data: final_data,
@@ -480,8 +477,7 @@ where
     /// # use tempfile::tempdir;
     /// #
     /// # #[derive(Archive, Serialize, Deserialize, Debug)]
-    /// # #[archive(check_bytes)]
-    /// # #[archive_attr(derive(Debug))]
+    /// # #[rkyv(derive(Debug))]
     /// # struct MyEvent { pub data: u32 }
     /// #
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -528,7 +524,6 @@ where
 pub trait EventHandler<E>
 where
     E: rkyv::Archive,
-    E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
 {
     fn handle(&mut self, event: &E::Archived) -> crate::error::Result<()>;
 }
@@ -549,15 +544,14 @@ where
 /// use std::sync::{Arc, Mutex};
 ///
 /// #[derive(Archive, Serialize, Deserialize, Debug)]
-/// #[archive(check_bytes)]
-/// #[archive_attr(derive(Debug))]
+/// #[rkyv(derive(Debug))]
 /// struct MyEvent { pub data: u32 }
 ///
 /// struct MyHandler { count: Arc<Mutex<u32>> }
 /// impl EventHandler<MyEvent> for MyHandler {
 ///     fn handle(&mut self, event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
 ///         let mut count = self.count.lock().unwrap();
-///         *count += event.data;
+///         *count += event.data.to_native();
 ///         Ok(())
 ///     }
 /// }
@@ -593,7 +587,7 @@ pub struct Processor<E, H> {
 impl<E, H> Processor<E, H>
 where
     E: rkyv::Archive,
-    E::Archived: for<'a> rkyv::CheckBytes<rkyv::validation::validators::DefaultValidator<'a>>,
+    E::Archived: for<'a> CheckBytes<HighValidator<'a, RancorError>>,
     H: EventHandler<E>,
 {
     /// Creates a new `Processor`.
@@ -737,14 +731,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::storage::StorageConfig;
+    // use super::*;
+    use crate::{
+        engine::{Reader, Writer},
+        storage::{Storage, StorageConfig},
+    };
     use rkyv::{Archive, Deserialize, Serialize};
     use tempfile::tempdir;
 
     #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-    #[archive(check_bytes)]
-    #[archive_attr(derive(Debug))]
+    #[rkyv(derive(Debug))]
+    #[repr(C)]
     struct TestEvent {
         value: u32,
     }

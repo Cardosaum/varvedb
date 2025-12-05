@@ -31,8 +31,7 @@
 //! use tempfile::tempdir;
 //!
 //! #[derive(Archive, Serialize, Deserialize, Debug)]
-//! #[archive(check_bytes)]
-//! #[archive_attr(derive(Debug))]
+//! #[rkyv(derive(Debug))]
 //! struct MyEvent {
 //!     pub id: u32,
 //!     pub data: String,

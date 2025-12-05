@@ -18,8 +18,7 @@ use varvedb::error::Error;
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Clone)]
-#[archive(check_bytes)]
-#[archive_attr(derive(Debug))]
+#[rkyv(derive(Debug))]
 struct MyEvent {
     pub data: u32,
 }

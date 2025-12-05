@@ -13,8 +13,7 @@ use varvedb::error::Error;
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
-#[archive_attr(derive(Debug))]
+#[rkyv(derive(Debug))]
 struct MyEvent {
     pub data: u32,
 }
@@ -40,11 +39,11 @@ async fn test_error_context() -> Result<(), Box<dyn std::error::Error>> {
     // Actually, `Writer::append` signature is `append(&mut self, stream_id: u128, expected_version: u32, event: E)`.
     // So if we pass wrong expected version, it should fail.
 
-    let result = writer.append(1, 1, MyEvent { data: 2 }); // Expected 1, but current is 1 (so next is 2). Wait.
-                                                           // The logic in `append` is:
-                                                           // The logic in `append` checks if the version already exists.
-                                                           // We appended version 1.
-                                                           // If we try to append version 1 again (with different data), it should fail with ConcurrencyConflict.
+    let _result = writer.append(1, 1, MyEvent { data: 2 }); // Expected 1, but current is 1 (so next is 2). Wait.
+                                                            // The logic in `append` is:
+                                                            // The logic in `append` checks if the version already exists.
+                                                            // We appended version 1.
+                                                            // If we try to append version 1 again (with different data), it should fail with ConcurrencyConflict.
 
     let result = writer.append(1, 1, MyEvent { data: 2 });
     match result {

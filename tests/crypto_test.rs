@@ -12,7 +12,6 @@ use varvedb::crypto::{decrypt, encrypt, KeyManager};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub struct SecretEvent {
     pub secret_data: Vec<u8>,
@@ -41,7 +40,7 @@ fn test_crypto_shredding() -> Result<(), Box<dyn std::error::Error>> {
     let event = SecretEvent {
         secret_data: vec![0xDE, 0xAD, 0xBE, 0xEF],
     };
-    let event_bytes = rkyv::to_bytes::<_, 1024>(&event)?;
+    let event_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&event)?;
     let encrypted_payload = encrypt(&key, &event_bytes, &[])?;
 
     // 3. Store (Simulating storing EncryptedEvent wrapper)
@@ -51,7 +50,9 @@ fn test_crypto_shredding() -> Result<(), Box<dyn std::error::Error>> {
 
     // 4. Decrypt
     let decrypted_bytes = decrypt(&key, &encrypted_payload, &[])?;
-    let decrypted_event = rkyv::check_archived_root::<SecretEvent>(&decrypted_bytes).unwrap();
+    let decrypted_event =
+        rkyv::access::<<SecretEvent as Archive>::Archived, rkyv::rancor::Error>(&decrypted_bytes)
+            .unwrap();
 
     assert_eq!(
         decrypted_event.secret_data.as_slice(),

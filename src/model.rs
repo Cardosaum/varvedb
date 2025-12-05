@@ -10,7 +10,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 /// Represents the payload of an event, which can be stored inline or as a reference to a blob.
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-#[archive(check_bytes)]
+#[rkyv(derive(Debug))]
 #[repr(C)]
 pub enum Payload {
     /// Small data stored directly in the event log.

@@ -15,7 +15,6 @@ use varvedb::engine::Writer;
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Arbitrary, Clone)]
-#[archive(check_bytes)]
 struct FuzzEvent {
     id: u32,
     data: Vec<u8>,

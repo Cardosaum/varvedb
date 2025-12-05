@@ -13,8 +13,7 @@ use varvedb::engine::{Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[archive(check_bytes)]
-#[archive_attr(derive(Debug, PartialEq))]
+#[rkyv(derive(Debug, PartialEq))]
 struct BenchEvent {
     pub data: [u8; 1024], // 1KB payload
 }

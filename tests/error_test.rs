@@ -12,7 +12,6 @@ use varvedb::engine::Writer;
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub struct ErrorEvent {
     pub id: u64,

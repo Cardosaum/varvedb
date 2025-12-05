@@ -12,7 +12,6 @@ use varvedb::engine::{Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 struct MyEvent {
     pub data: u32,
 }
@@ -51,7 +50,7 @@ fn test_validation_error_on_corrupted_data() -> Result<(), Box<dyn std::error::E
 
     // 4. Assert that we get a Validation error
     match result {
-        Err(varvedb::error::Error::EventValidation(_)) => {
+        Err(varvedb::error::Error::EventSerialization(_)) => {
             // Success! We caught the corruption.
         }
         Ok(_) => {

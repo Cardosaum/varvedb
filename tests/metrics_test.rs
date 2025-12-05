@@ -15,7 +15,6 @@ use varvedb::metrics::VarveMetrics;
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub struct MetricEvent {
     pub id: u64,

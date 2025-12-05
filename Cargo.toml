@@ -36,7 +36,7 @@ heed = "0.20.5"
 libc = "0.2.178"
 prometheus = "0.14.0"
 rand = "0.8.5"
-rkyv = { version = "0.7.44", features = ["validation"] }
+rkyv = { version = "0.8", features = ["bytecheck", "little_endian"] }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 sha2 = "0.10.9"
 thiserror = "1.0.57"
@@ -48,6 +48,7 @@ zeroize = { version = "1.7", features = ["derive"] }
 tempfile = "3.10.0"
 criterion = "0.5.1"
 proptest = "1.4.0"
+bytecheck = "0.8.2"
 
 [[bench]]
 name = "write_bench"

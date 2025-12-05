@@ -13,7 +13,6 @@ use varvedb::engine::{EventHandler, Processor, Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Clone)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub enum ChatEvent {
     Join { user: String },

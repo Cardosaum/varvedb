@@ -14,8 +14,7 @@ use varvedb::engine::{EventHandler, Processor, ProcessorConfig, Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
-#[archive_attr(derive(Debug))]
+#[rkyv(derive(Debug))]
 struct MyEvent {
     pub data: u32,
 }
@@ -27,7 +26,7 @@ struct MyHandler {
 impl EventHandler<MyEvent> for MyHandler {
     fn handle(&mut self, event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
         let mut count = self.count.lock().unwrap();
-        *count += event.data;
+        *count += event.data.to_native();
         Ok(())
     }
 }

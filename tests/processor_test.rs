@@ -14,7 +14,6 @@ use varvedb::engine::{EventHandler, Processor, Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Clone)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub enum TestEvent {
     Ping(u64),
@@ -28,7 +27,7 @@ impl EventHandler<TestEvent> for TestHandler {
     fn handle(&mut self, event: &<TestEvent as Archive>::Archived) -> varvedb::error::Result<()> {
         match event {
             rkyv::Archived::<TestEvent>::Ping(val) => {
-                self.received.lock().unwrap().push(*val);
+                self.received.lock().unwrap().push(val.to_native());
             }
         }
         Ok(())

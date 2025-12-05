@@ -13,8 +13,7 @@ use varvedb::engine::{Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[archive(check_bytes)]
-#[archive_attr(derive(Debug))]
+#[rkyv(derive(Debug))]
 struct MyEvent {
     pub data: u32,
     pub payload: Vec<u8>,

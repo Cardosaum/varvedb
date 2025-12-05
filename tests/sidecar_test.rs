@@ -12,7 +12,6 @@ use varvedb::engine::{Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub struct TestEvent {
     pub id: u64,

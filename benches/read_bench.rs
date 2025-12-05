@@ -13,7 +13,6 @@ use varvedb::engine::{Reader, Writer};
 use varvedb::storage::{Storage, StorageConfig};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
-#[archive(check_bytes)]
 #[repr(C)]
 pub struct BenchEvent {
     pub id: u64,

@@ -73,3 +73,13 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl rkyv::rancor::Fallible for Error {
+    type Error = Self;
+}
+
+impl From<rkyv::rancor::Error> for Error {
+    fn from(e: rkyv::rancor::Error) -> Self {
+        Self::EventSerialization(e.to_string())
+    }
+}
