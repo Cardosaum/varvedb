@@ -1,0 +1,20 @@
+:root {
+  --bg-main: #0f1117; /* Deep, neutral dark */
+  --bg-card: #161b22;
+  --bg-card-hover: #1c2128;
+  
+  --primary: #38bdf8;
+  --primary-hover: #0ea5e9;
+  --secondary: #94a3b8;
+  --accent: #fbbf24;
+  
+  --text-main: #f0f6fc;
+  --text-muted: #8b949e;
+  
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --container-width: min(1280px, 90vw);
+  --nav-height: 70px;
+}

@@ -1,0 +1,72 @@
+.hero {
+  padding: 8rem 0 6rem;
+  text-align: center;
+  border-bottom: 1px solid #21262d;
+}
+
+.hero-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.hero-logo {
+  width: 120px; /* Much smaller, icon-like */
+  height: auto;
+  margin-bottom: 2.5rem;
+  filter: drop-shadow(0 0 40px rgba(56, 189, 248, 0.15));
+}
+
+.hero h1 {
+  font-family: var(--font-heading);
+  font-size: 3.5rem;
+  line-height: 1.1;
+  margin-bottom: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-main);
+}
+
+.hero .highlight {
+  color: var(--primary);
+}
+
+.tagline {
+  font-size: 1.25rem;
+  color: var(--text-muted);
+  margin-bottom: 2.5rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.install-cmd {
+  margin-top: 3.5rem;
+  background: rgba(13, 17, 23, 0.8);
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  border: 1px solid #30363d;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  color: #f0f6fc;
+  font-size: 1rem;
+  backdrop-filter: blur(4px);
+  transition: border-color 0.2s;
+}
+
+.install-cmd:hover {
+  border-color: #58a6ff;
+}
+
+.install-cmd .prefix {
+  color: #58a6ff;
+  user-select: none;
+}
+
+@media (max-width: 768px) {
+  .hero h1 {
+    font-size: 2.5rem;
+  }
+}

@@ -9,7 +9,19 @@ import '@fontsource/outfit/700.css';
 import '@fontsource/outfit/800.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/700.css';
-import './style.css'
+// CSS Imports
+import './css/base/variables.css';
+import './css/base/reset.css';
+import './css/base/animations.css';
+import './css/layout/container.css';
+import './css/layout/navbar.css';
+import './css/layout/footer.css';
+import './css/components/buttons.css';
+import './css/components/waves.css';
+import './css/sections/hero.css';
+import './css/sections/features.css';
+import './css/sections/architecture.css';
+import './css/sections/code-window.css';
 
 // Simple intersection observer for fade-in animations
 const observerOptions = {
