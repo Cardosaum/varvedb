@@ -1,6 +1,6 @@
 # Optimize Images
 
-**Status:** Open
+**Status:** Closed
 **Priority:** Low
 **Tags:** performance, assets
 
