@@ -24,6 +24,10 @@ exclude = [
     "issues",
 ]
 
+[features]
+default = []
+serde = ["dep:serde", "zeroize/serde"]
+
 [dependencies]
 aes-gcm = "0.10.3"
 bytemuck = "1.14.3"
@@ -33,6 +37,7 @@ libc = "0.2.178"
 prometheus = "0.14.0"
 rand = "0.8.5"
 rkyv = { version = "0.7.44", features = ["validation"] }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
 sha2 = "0.10.9"
 thiserror = "1.0.57"
 tokio = { version = "1.36.0", features = ["full"] }

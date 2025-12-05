@@ -39,6 +39,7 @@ impl StreamKey {
 ///
 /// This struct controls the physical layout and behavior of the underlying LMDB environment.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct StorageConfig {
     /// The directory where the database files will be stored.
     ///
