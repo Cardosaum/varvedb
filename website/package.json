@@ -12,6 +12,9 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/outfit": "^5.2.8",
+    "@fontsource/plus-jakarta-sans": "^5.2.8",
     "highlight.js": "^11.11.1"
   }
 }

@@ -1,6 +1,6 @@
 # Self-Host Fonts
 
-**Status:** Open
+**Status:** Closed
 **Priority:** Low
 **Tags:** performance, privacy
 
