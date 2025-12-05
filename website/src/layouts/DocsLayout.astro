@@ -1,0 +1,167 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const { title } = Astro.props;
+
+// Fetch all docs to build the sidebar
+const allDocs = await getCollection('docs');
+// Sort by some logic if needed, for now alphabetical or manual list
+// We can define a manual order if we want
+const order = ['introduction', 'quick_start', 'architecture', 'usage', 'example_application'];
+const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(Boolean);
+---
+
+<BaseLayout title={title}>
+  <div class="docs-container container">
+    <aside class="docs-sidebar">
+      <nav>
+        <ul>
+          {sortedDocs.map(doc => (
+            <li>
+              <a href={`/docs/${doc.slug}`} class={Astro.url.pathname.includes(doc.slug) ? 'active' : ''}>
+                {doc.data.title || doc.slug.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </aside>
+    <article class="docs-content">
+      <h1>{title}</h1>
+      <slot />
+    </article>
+  </div>
+</BaseLayout>
+
+<style>
+  .docs-container {
+    display: flex;
+    gap: 3rem;
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+    min-height: 80vh;
+  }
+
+  .docs-sidebar {
+    width: 250px;
+    flex-shrink: 0;
+    border-right: 1px solid #30363d;
+    padding-right: 1.5rem;
+  }
+
+  .docs-sidebar ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .docs-sidebar a {
+    display: block;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    color: var(--text-muted);
+    transition: all 0.2s;
+  }
+
+  .docs-sidebar a:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+  }
+
+  .docs-sidebar a.active {
+    background: rgba(56, 189, 248, 0.1);
+    color: var(--primary);
+    font-weight: 600;
+  }
+
+  .docs-content {
+    flex: 1;
+    min-width: 0; /* Prevent overflow */
+    line-height: 1.7;
+    color: #c9d1d9;
+  }
+
+  /* Typography for Markdown Content */
+  .docs-content :global(h1) {
+    font-family: var(--font-heading);
+    font-size: 2.5rem;
+    margin-bottom: 1.5rem;
+    color: var(--text-main);
+  }
+
+  .docs-content :global(h2) {
+    font-family: var(--font-heading);
+    font-size: 1.8rem;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-main);
+    border-bottom: 1px solid #30363d;
+    padding-bottom: 0.5rem;
+  }
+
+  .docs-content :global(h3) {
+    font-size: 1.4rem;
+    margin-top: 2rem;
+    margin-bottom: 0.8rem;
+    color: var(--text-main);
+  }
+
+  .docs-content :global(p) {
+    margin-bottom: 1.2rem;
+  }
+
+  .docs-content :global(code) {
+    background: rgba(110, 118, 129, 0.4);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+
+  .docs-content :global(pre) {
+    background: #0d1117 !important;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+  }
+
+  .docs-content :global(pre code) {
+    background: none;
+    padding: 0;
+    font-size: 0.9rem;
+  }
+
+  .docs-content :global(ul), .docs-content :global(ol) {
+    margin-bottom: 1.2rem;
+    padding-left: 1.5rem;
+  }
+
+  .docs-content :global(li) {
+    margin-bottom: 0.5rem;
+  }
+
+  .docs-content :global(a) {
+    color: var(--primary);
+    text-decoration: none;
+  }
+
+  .docs-content :global(a:hover) {
+    text-decoration: underline;
+  }
+
+  @media (max-width: 768px) {
+    .docs-container {
+      flex-direction: column;
+    }
+    
+    .docs-sidebar {
+      width: 100%;
+      border-right: none;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 1.5rem;
+    }
+  }
+</style>

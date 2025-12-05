@@ -1,0 +1,179 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import '../styles/css/sections/hero.css';
+import '../styles/css/sections/features.css';
+import '../styles/css/sections/architecture.css';
+import '../styles/css/sections/code-window.css';
+---
+
+<BaseLayout>
+  <section class="hero varve-layer layer-1">
+    <div id="hero-canvas"></div>
+    <div class="container hero-content">
+      <img src="/logo.svg" alt="VarveDB Logo" class="hero-logo" />
+      <h1>The Embedded <br/><span class="highlight">Event Store</span></h1>
+      <p class="tagline">Map events directly from disk to memory. Eliminate serialization overhead and achieve sub-microsecond reads.</p>
+      <div class="cta-group">
+        <a href="/docs/quick_start" class="btn btn-primary">Get Started</a>
+        <a href="https://docs.rs/varvedb" target="_blank" class="btn btn-secondary">Read the Docs</a>
+      </div>
+      <div class="install-cmd">
+        <span class="prefix">$</span> cargo add varvedb
+        <button class="copy-btn" aria-label="Copy command">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="features varve-layer layer-2">
+    <div class="container">
+      <h2>Production-Hardened Reliability</h2>
+      <div class="features-grid">
+        <div class="feature-card fade-in-section">
+          <div class="feature-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          </div>
+          <h3>Zero-Copy Reads</h3>
+          <p>Leverages <a href="#" class="tech-link">rkyv</a> to map data directly from disk. No deserialization step means reads are instant.</p>
+        </div>
+        <div class="feature-card fade-in-section">
+          <div class="feature-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+          </div>
+          <h3>Append-Only Log</h3>
+          <p>Immutable event stream ensures data integrity and simplifies replication. Perfect for Event Sourcing.</p>
+        </div>
+        <div class="feature-card fade-in-section">
+          <div class="feature-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+          </div>
+          <h3>Authenticated Encryption</h3>
+          <p>Built-in <a href="#" class="tech-link">ChaCha20-Poly1305</a> encryption. Data is encrypted at rest with zero runtime overhead.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture" class="architecture varve-layer layer-3">
+    <div class="container">
+      <h2>Architecture</h2>
+      <p class="section-desc">Designed for throughput and reliability. A clean separation of concerns.</p>
+      
+      <div class="arch-container">
+        <!-- Diagram Side -->
+        <div class="arch-diagram">
+          <div class="data-packet packet-write"></div>
+          <div class="data-packet packet-read"></div>
+          <div class="arch-box user" data-id="user">User Application</div>
+          
+          <div class="arch-flow">
+            <span class="arch-icon">⬇</span>
+            <span>Zero-Copy Read / Append</span>
+          </div>
+
+          <div class="arch-box varvedb" data-id="varvedb">
+            <div class="arch-title">VarveDB Engine</div>
+            <div class="arch-inner">
+              <div class="arch-component" data-id="writer">Batch Writer</div>
+              <div class="arch-component" data-id="indexer">Indexer</div>
+              <div class="arch-component" data-id="cache">Page Cache</div>
+            </div>
+            
+            <div class="arch-flow internal">
+              <span class="arch-icon">⬇</span>
+              <span>mmap / fsync</span>
+            </div>
+
+            <div class="arch-box storage" data-id="storage">LMDB / Disk</div>
+          </div>
+        </div>
+
+        <!-- Code Side -->
+        <div class="code-window fade-in-section">
+          <div class="code-header">
+            <div class="code-dots"><span></span><span></span><span></span></div>
+            <div class="code-title">src/main.rs</div>
+          </div>
+          <pre is:raw><code><span class="keyword">use</span> varvedb::Varve;
+
+<span class="keyword">fn</span> <span class="function">main</span>() -> <span class="type">Result</span><(), <span class="type">Error</span>> {
+  <span class="comment">// Initialize the store</span>
+  <span class="keyword">let</span> db = <span class="type">Varve</span>::<span class="function">open</span>(<span class="string">"./data"</span>)?;
+
+  <span class="comment">// Append an event (Zero-Copy)</span>
+  db.<span class="function">append</span>(<span class="type">Event</span>::new(<span class="string">"user_created"</span>, payload))?;
+
+  <span class="comment">// Read events instantly</span>
+  <span class="keyword">for</span> event <span class="keyword">in</span> db.<span class="function">iter</span>() {
+      <span class="function">println!</span>(<span class="string">"Event: {:?}"</span>, event);
+  }
+  <span class="keyword">Ok</span>(())
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<script>
+  import { initHero3D } from '../js/hero-3d.js';
+
+  // Initialize 3D Hero
+  initHero3D();
+
+  // Simple intersection observer for fade-in animations
+  const observerOptions = {
+    root: null,
+    rootMargin: '0px',
+    threshold: 0.1
+  };
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, observerOptions);
+
+  document.querySelectorAll('.fade-in-section').forEach(el => observer.observe(el));
+
+  // Copy to clipboard
+  const copyBtn = document.querySelector('.copy-btn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText('cargo add varvedb');
+      
+      const originalIcon = copyBtn.innerHTML;
+      copyBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+      
+      setTimeout(() => {
+        copyBtn.innerHTML = originalIcon;
+      }, 2000);
+    });
+  }
+
+  // Interactive Diagram
+  const components = document.querySelectorAll('.arch-component, .arch-box');
+  components.forEach(comp => {
+    comp.addEventListener('mouseenter', () => {
+      const id = comp.getAttribute('data-id');
+      if (!id) return;
+      
+      components.forEach(c => {
+        if (c === comp) {
+          c.classList.add('highlight');
+        } else {
+          c.classList.add('dim');
+        }
+      });
+    });
+
+    comp.addEventListener('mouseleave', () => {
+      components.forEach(c => {
+        c.classList.remove('highlight', 'dim');
+      });
+    });
+  });
+</script>

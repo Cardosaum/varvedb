@@ -1,6 +1,6 @@
 # Migrate to Astro or VitePress
 
-**Status:** Open
+**Status:** Closed
 **Priority:** High
 **Tags:** architecture, documentation, modernization
 

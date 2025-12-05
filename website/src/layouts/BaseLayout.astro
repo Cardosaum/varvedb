@@ -1,0 +1,145 @@
+---
+import '../styles/css/base/variables.css';
+import '../styles/css/base/reset.css';
+import '../styles/css/base/animations.css';
+import '../styles/css/layout/container.css';
+import '../styles/css/layout/navbar.css';
+import '../styles/css/layout/footer.css';
+import '../styles/css/components/buttons.css';
+import '../styles/css/components/waves.css';
+
+// Fonts
+import '@fontsource/plus-jakarta-sans/400.css';
+import '@fontsource/plus-jakarta-sans/500.css';
+import '@fontsource/plus-jakarta-sans/600.css';
+import '@fontsource/plus-jakarta-sans/700.css';
+import '@fontsource/outfit/300.css';
+import '@fontsource/outfit/400.css';
+import '@fontsource/outfit/600.css';
+import '@fontsource/outfit/700.css';
+import '@fontsource/outfit/800.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/700.css';
+
+const { title = "VarveDB - Institutional Grade Event Store", description = "A high-performance, embedded, append-only event store for Rust." } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content="https://varvedb.com/og-image.png" />
+    <meta property="og:url" content="https://varvedb.com" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "VarveDB",
+        "operatingSystem": "Any (Rust)",
+        "applicationCategory": "Database",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "description": "A high-performance, embedded, append-only event store for Rust.",
+        "softwareVersion": "0.0.0", 
+        "url": "https://varvedb.com",
+        "author": {
+          "@type": "Person",
+          "name": "VarveDB Contributors"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <nav class="navbar">
+        <div class="container">
+          <a href="/" class="logo">
+            <img src="/logo.svg" alt="VarveDB Logo" />
+            VarveDB
+          </a>
+          
+          <button class="mobile-toggle" aria-label="Toggle menu">
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+          </button>
+
+          <div class="nav-content">
+            <div class="links">
+              <a href="#features">Features</a>
+              <a href="#architecture">Architecture</a>
+              <a href="/docs/introduction">Docs</a>
+            </div>
+            <a href="https://github.com/Cardosaum/varvedb" target="_blank" class="btn-github">
+              <svg height="20" width="20" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+              </svg>
+              <span>GitHub</span>
+            </a>
+          </div>
+        </div>
+      </nav>
+
+      <main>
+        <slot />
+      </main>
+
+      <footer>
+        <div class="container">
+          <div class="footer-content">
+            <div class="footer-col">
+              <h4>VarveDB</h4>
+              <p>The embedded, append-only event store for high-performance Rust applications.</p>
+            </div>
+            <div class="footer-col">
+              <h4>Resources</h4>
+              <a href="/docs/introduction">Documentation</a>
+              <a href="https://crates.io/crates/varvedb">Crates.io</a>
+              <a href="https://docs.rs/varvedb">API Reference</a>
+            </div>
+            <div class="footer-col">
+              <h4>Community</h4>
+              <a href="https://github.com/Cardosaum/varvedb">GitHub</a>
+              <a href="https://github.com/Cardosaum/varvedb/issues">Issues</a>
+            </div>
+          </div>
+          <div class="copyright">
+            &copy; 2025 VarveDB. Open source under MIT/Apache-2.0.
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      // Mobile Menu Logic
+      const mobileToggle = document.querySelector('.mobile-toggle');
+      const navbar = document.querySelector('.navbar');
+
+      if (mobileToggle && navbar) {
+        mobileToggle.addEventListener('click', () => {
+          navbar.classList.toggle('mobile-menu-open');
+          document.body.style.overflow = navbar.classList.contains('mobile-menu-open') ? 'hidden' : '';
+        });
+
+        // Close menu when clicking a link
+        document.querySelectorAll('.links a').forEach(link => {
+          link.addEventListener('click', () => {
+            navbar.classList.remove('mobile-menu-open');
+            document.body.style.overflow = '';
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

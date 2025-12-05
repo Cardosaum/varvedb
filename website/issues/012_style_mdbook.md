@@ -1,6 +1,6 @@
 # Style mdbook to Match Main Site
 
-**Status:** Open
+**Status:** Cancelled
 **Priority:** Medium
 **Tags:** design, documentation
 
