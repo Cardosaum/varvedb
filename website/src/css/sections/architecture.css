@@ -136,3 +136,95 @@
     gap: 3rem;
   }
 }
+
+/* Data Flow Animation */
+.arch-diagram {
+  position: relative;
+}
+
+.data-packet {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--primary);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--primary);
+  opacity: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.packet-write {
+  animation: flow-write 4s infinite ease-in-out;
+}
+
+.packet-read {
+  animation: flow-read 4s infinite ease-in-out;
+  animation-delay: 2s; /* Start halfway through write */
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+@keyframes flow-write {
+  0% {
+    top: 5%;
+    left: 50%;
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.5);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  40% {
+    top: 45%; /* VarveDB Box */
+    left: 50%;
+  }
+  50% {
+    top: 45%;
+    left: 30%; /* Writer */
+  }
+  60% {
+    top: 85%; /* Storage */
+    left: 50%;
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  70% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.5);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes flow-read {
+  0% {
+    top: 85%; /* Storage */
+    left: 50%;
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.5);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  30% {
+    top: 45%;
+    left: 70%; /* Reader */
+  }
+  60% {
+    top: 5%; /* User */
+    left: 50%;
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  70% {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.5);
+  }
+  100% {
+    opacity: 0;
+  }
+}
