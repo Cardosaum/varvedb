@@ -1,6 +1,6 @@
 # Add JSON-LD Structured Data
 
-**Status:** Open
+**Status:** Closed
 **Priority:** Low
 **Tags:** seo
 
