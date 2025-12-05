@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2025-12-05
+
+### Documentation
+
+- Update book and website for rkyv 0.8 and processor api changes
+
+### Features
+
+- Add optional serde support for serialization and deserialization in StorageConfig
+- *(website)* Add documentation section and syntax highlighting
+- *(website)* Improve copy, fix CTAs, and add quick start guide
+- *(website)* Self-host fonts using @fontsource packages
+- *(website)* Add JSON-LD structured data for SEO
+- *(website)* Animate architecture diagram data flow
+- *(website)* Add holographic strata 3D hero
+
+### Miscellaneous Tasks
+
+- Upgrade rkyv to 0.8
+
+### Performance
+
+- *(website)* Optimize logo.svg and remove legacy style.css
+
+### Refactor
+
+- *(website)* Split style.css into modular css files
+- *(website)* Migrate to Astro and centralize documentation
+
 ## [0.2.1] - 2025-12-04
 
 ### Features
