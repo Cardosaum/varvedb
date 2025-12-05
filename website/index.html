@@ -157,12 +157,8 @@
 <span class="interactive" data-id="writer">writer.append(event).await?;</span>
 
 <span class="comment">// 2. Process in background</span>
-<span class="keyword">let</span> <span class="keyword">mut</span> processor = Processor::new(reader.clone());
-<span class="interactive" data-id="processor">processor.run(|event| {</span>
-    <span class="comment">// Update materialized views, trigger side-effects</span>
-    println!(<span class="string">"New user: {:?}"</span>, event);
-    Ok(())
-<span class="interactive" data-id="processor">}).await?;</span>
+<span class="keyword">let</span> <span class="keyword">mut</span> processor = Processor::new(reader.clone(), handler, consumer_id, rx);
+processor.run().await?;
 
 <span class="comment">// 3. Read efficiently</span>
 <span class="keyword">let</span> user = <span class="interactive" data-id="reader">reader.get(event_id)?;</span>

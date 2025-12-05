@@ -8,8 +8,8 @@ Add `varvedb` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-varvedb = "0.1" # Check crates.io for the latest version
-rkyv = { version = "0.7", features = ["validation"] }
+varvedb = "0.2" # Check crates.io for the latest version
+rkyv = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -21,7 +21,7 @@ Events in VarveDB must be serializable by `rkyv`. You need to derive `Archive`, 
 use rkyv::{Archive, Serialize, Deserialize};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Clone)]
-#[archive(check_bytes)]
+#[rkyv(derive(Debug))]
 pub struct MyEvent {
     pub id: u32,
     pub action: String,
@@ -103,7 +103,14 @@ impl EventHandler<MyEvent> for MyHandler {
 // ... inside async runtime ...
 
 let rx = writer.subscribe();
-let mut processor = Processor::new(reader, MyHandler, "my-consumer-group", rx);
+
+// Create a unique consumer ID (e.g., by hashing a string)
+use std::hash::{Hash, Hasher};
+let mut hasher = std::collections::hash_map::DefaultHasher::new();
+"my-consumer-group".hash(&mut hasher);
+let consumer_id = hasher.finish();
+
+let mut processor = Processor::new(reader, MyHandler, consumer_id, rx);
 
 // This will run indefinitely, processing new events as they arrive
 processor.run().await?;

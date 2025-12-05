@@ -16,7 +16,7 @@ Add dependencies to `Cargo.toml`:
 ```toml
 [dependencies]
 varvedb = { path = "../varvedb" } # Adjust path if needed
-rkyv = { version = "0.7", features = ["validation"] }
+rkyv = "0.8"
 tokio = { version = "1", features = ["full", "macros"] }
 serde = { version = "1", features = ["derive"] }
 anyhow = "1.0"
@@ -30,7 +30,7 @@ We'll define an enum to represent our transaction events.
 use rkyv::{Archive, Serialize, Deserialize};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Clone)]
-#[archive(check_bytes)]
+#[rkyv(derive(Debug))]
 pub enum BankEvent {
     AccountCreated { owner: String },
     Deposited { amount: u64 },
@@ -102,7 +102,14 @@ async fn main() -> anyhow::Result<()> {
     // 3. Process Events
     let rx = writer.subscribe();
     let handler = BalanceProjector { balances: HashMap::new() };
-    let mut processor = Processor::new(reader, handler, "balance-projector", rx);
+    
+    // Create a unique consumer ID
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    "balance-projector".hash(&mut hasher);
+    let consumer_id = hasher.finish();
+
+    let mut processor = Processor::new(reader, handler, consumer_id, rx);
 
     // Run the processor (in a real app, this would be a background task)
     // We'll run it in a separate task and wait a bit for it to catch up
