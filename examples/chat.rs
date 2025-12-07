@@ -9,8 +9,9 @@
 use rkyv::{Archive, Deserialize, Serialize};
 use tempfile::tempdir;
 use tokio::time::Duration;
-use varvedb::engine::{EventHandler, Processor, Reader, Writer};
-use varvedb::storage::{Storage, StorageConfig};
+use varvedb::processor::{EventHandler, Processor};
+use varvedb::traits::MetadataExt;
+use varvedb::{ExpectedVersion, Payload, Varve};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 #[repr(C)]
@@ -18,6 +19,22 @@ pub enum ChatEvent {
     Join { user: String },
     Message { user: String, content: String },
     Leave { user: String },
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+#[repr(C)]
+pub struct ChatMetadata {
+    pub stream_id: u128,
+    pub version: u32,
+}
+
+impl MetadataExt for ChatMetadata {
+    fn stream_id(&self) -> u128 {
+        self.stream_id
+    }
+    fn version(&self) -> u32 {
+        self.version
+    }
 }
 
 struct ChatHandler {
@@ -44,17 +61,9 @@ impl EventHandler<ChatEvent> for ChatHandler {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
-    let config = StorageConfig {
-        path: dir.path().join("chat_example.mdb"),
-        ..Default::default()
-    };
-    let storage = Storage::open(config)?;
+    let db_path = dir.path().join("chat_example.mdb");
+    let mut db = Varve::open(&db_path)?;
 
-    let mut writer = Writer::<ChatEvent>::new(storage.clone());
-    let reader = Reader::<ChatEvent>::new(storage.clone());
-    let rx = writer.subscribe();
-
-    // Start Processor
     // Start Processor
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -62,12 +71,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let consumer_id = hasher.finish();
 
     let mut processor = Processor::new(
-        reader,
+        &db,
         ChatHandler {
             name: "ClientView".to_string(),
         },
         consumer_id,
-        rx,
     );
 
     tokio::spawn(async move {
@@ -97,8 +105,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ];
 
+    let stream_id = 1;
     for (i, event) in events.into_iter().enumerate() {
-        writer.append(1, (i + 1) as u32, event)?;
+        let metadata = ChatMetadata {
+            stream_id,
+            version: (i + 1) as u32,
+        };
+        db.append(Payload::new(event, metadata), ExpectedVersion::Auto)?;
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 

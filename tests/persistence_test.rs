@@ -53,10 +53,11 @@ fn test_persistence_after_close() -> Result<(), Box<dyn std::error::Error>> {
         let mut writer = Writer::<PersistEvent>::new(storage.clone());
         let reader = Reader::<PersistEvent>::new(storage.clone());
 
-        let txn = storage.env.read_txn()?;
-        let event1 = reader.get(&txn, 1)?.expect("Event 1 should exist");
-        assert_eq!(event1.data, "Part 1");
-        drop(txn); // Release read txn before writing
+        {
+            let txn = storage.env.read_txn()?;
+            let event1 = reader.get(&txn, 1)?.expect("Event 1 should exist");
+            assert_eq!(event1.data, "Part 1");
+        } // txn dropped here, releasing lock
 
         writer.append(
             1,

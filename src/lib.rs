@@ -67,6 +67,13 @@ pub mod engine;
 pub mod error;
 pub mod metrics;
 pub mod model;
+pub mod processor;
 pub mod storage;
+pub mod traits;
+pub mod varve;
+
+pub use varve::{ExpectedVersion, Varve};
 
 pub use error::Error;
+pub use model::Payload;
+pub use traits::MetadataExt;

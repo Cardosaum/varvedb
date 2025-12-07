@@ -1,97 +1,85 @@
-// This file is part of VarveDB.
-//
-// Copyright (C) 2025 Matheus Cardoso <varvedb@matheus.sbs>
-//
-// This Source Code Form is subject to the terms of the Mozilla Public License
-// v. 2.0. If a copy of the MPL was not distributed with this file, You can
-// obtain one at http://mozilla.org/MPL/2.0/.
-
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::tempdir;
-use varvedb::engine::{EventHandler, Processor, ProcessorConfig, Reader, Writer};
-use varvedb::storage::{Storage, StorageConfig};
+use varvedb::processor::{EventHandler, Processor, ProcessorConfig};
+use varvedb::traits::MetadataExt;
+use varvedb::{ExpectedVersion, Payload, Varve};
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
-#[rkyv(derive(Debug))]
-struct MyEvent {
-    pub data: u32,
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+#[repr(C)]
+pub struct MyEvent {
+    pub id: u32,
 }
 
-struct MyHandler {
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+#[repr(C)]
+pub struct MyMetadata {
+    pub stream_id: u128,
+    pub version: u32,
+}
+
+impl MetadataExt for MyMetadata {
+    fn stream_id(&self) -> u128 {
+        self.stream_id
+    }
+    fn version(&self) -> u32 {
+        self.version
+    }
+}
+
+struct SimpleHandler {
     count: Arc<Mutex<u32>>,
 }
 
-impl EventHandler<MyEvent> for MyHandler {
-    fn handle(&mut self, event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
-        let mut count = self.count.lock().unwrap();
-        *count += event.data.to_native();
+impl EventHandler<MyEvent> for SimpleHandler {
+    fn handle(&mut self, _event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
+        let mut c = self.count.lock().unwrap();
+        *c += 1;
         Ok(())
     }
 }
 
 #[tokio::test]
-async fn test_processor_txn_reuse() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_txn_reuse() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
-    let config = StorageConfig {
-        path: dir.path().to_path_buf(),
-        ..Default::default()
-    };
-    let storage = Storage::open(config)?;
+    let db_path = dir.path().join("txn_reuse_test.mdb");
+    let mut db = Varve::open(&db_path)?;
 
-    // 1. Write many events (enough to trigger multiple batches)
-    let mut writer = Writer::new(storage.clone());
-    let event_count = 200;
-    for i in 1..=event_count {
-        writer.append(1, i, MyEvent { data: 1 })?;
-    }
-
-    // 2. Configure Processor with small batch size
     let count = Arc::new(Mutex::new(0));
-    let handler = MyHandler {
+    let handler = SimpleHandler {
         count: count.clone(),
     };
 
-    let reader = Reader::<MyEvent>::new(storage.clone());
-    let rx = writer.subscribe();
+    let consumer_id = 999u64;
+    let mut processor = Processor::new(&db, handler, consumer_id).with_config(ProcessorConfig {
+        batch_size: 5,
+        batch_timeout: Duration::from_millis(10),
+    });
 
-    let config = ProcessorConfig {
-        batch_size: 10,
-        batch_timeout: Duration::from_millis(100),
-    };
+    let handle = tokio::spawn(async move {
+        processor.run().await.unwrap();
+    });
 
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    "txn_reuse_consumer".hash(&mut hasher);
-    let consumer_id = hasher.finish();
+    // Append events slowly to trigger multiple polls/txns
+    for i in 0..15 {
+        let event = MyEvent { id: i };
+        let metadata = MyMetadata {
+            stream_id: 1,
+            version: i + 1,
+        };
+        db.append(Payload::new(event, metadata), ExpectedVersion::Auto)?;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 
-    let mut processor = Processor::new(reader, handler, consumer_id, rx).with_config(config);
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // 3. Run processor in background
-    // This spawn verifies that the future is Send
-    let handle = tokio::spawn(async move { processor.run().await });
-
-    // 4. Wait for processing
-    let start = std::time::Instant::now();
-    loop {
-        {
-            let c = count.lock().unwrap();
-            if *c >= event_count {
-                break;
-            }
-        }
-        if start.elapsed() > Duration::from_secs(10) {
-            panic!("Timed out waiting for events");
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    {
+        let c = count.lock().unwrap();
+        assert_eq!(*c, 15);
     }
 
     handle.abort();
-
-    // 5. Verify count
-    let final_count = *count.lock().unwrap();
-    assert_eq!(final_count, event_count);
 
     Ok(())
 }

@@ -1,82 +1,84 @@
-// This file is part of VarveDB.
-//
-// Copyright (C) 2025 Matheus Cardoso <varvedb@matheus.sbs>
-//
-// This Source Code Form is subject to the terms of the Mozilla Public License
-// v. 2.0. If a copy of the MPL was not distributed with this file, You can
-// obtain one at http://mozilla.org/MPL/2.0/.
-
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::tempdir;
-use varvedb::engine::{EventHandler, Processor, Reader, Writer};
-use varvedb::storage::{Storage, StorageConfig};
+use varvedb::processor::{EventHandler, Processor};
+use varvedb::traits::MetadataExt;
+use varvedb::{ExpectedVersion, Payload, Varve};
 
 #[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 #[repr(C)]
-pub enum TestEvent {
-    Ping(u64),
+pub struct TestEvent {
+    pub content: String,
+}
+
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+#[repr(C)]
+pub struct TestMetadata {
+    pub stream_id: u128,
+    pub version: u32,
+}
+
+impl MetadataExt for TestMetadata {
+    fn stream_id(&self) -> u128 {
+        self.stream_id
+    }
+    fn version(&self) -> u32 {
+        self.version
+    }
 }
 
 struct TestHandler {
-    received: Arc<Mutex<Vec<u64>>>,
+    received: Arc<Mutex<Vec<String>>>,
 }
 
 impl EventHandler<TestEvent> for TestHandler {
-    fn handle(&mut self, event: &<TestEvent as Archive>::Archived) -> varvedb::error::Result<()> {
-        match event {
-            rkyv::Archived::<TestEvent>::Ping(val) => {
-                self.received.lock().unwrap().push(val.to_native());
-            }
-        }
+    fn handle(&mut self, event: &ArchivedTestEvent) -> varvedb::error::Result<()> {
+        let mut received = self.received.lock().unwrap();
+        received.push(event.content.to_string());
         Ok(())
     }
 }
 
 #[tokio::test]
-async fn test_processor_reactive() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_processor_basic_flow() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
-    let config = StorageConfig {
-        path: dir.path().join("test_reactive.mdb"),
-        map_size: 10 * 1024 * 1024,
-        max_dbs: 10,
-        create_dir: true,
-        encryption_enabled: false,
-        master_key: None,
-    };
-
-    let storage = Storage::open(config)?;
-    let mut writer = Writer::<TestEvent>::new(storage.clone());
-    let reader = Reader::<TestEvent>::new(storage.clone());
-    let rx = writer.subscribe();
+    let db_path = dir.path().join("processor_test.mdb");
+    let mut db = Varve::open(&db_path)?;
 
     let received = Arc::new(Mutex::new(Vec::new()));
     let handler = TestHandler {
         received: received.clone(),
     };
 
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    "test_consumer".hash(&mut hasher);
-    let consumer_id = hasher.finish();
+    let consumer_id = 101u64;
+    let mut processor = Processor::new(&db, handler, consumer_id);
 
-    let mut processor = Processor::new(reader, handler, consumer_id, rx);
-
-    // Spawn processor in background
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         processor.run().await.unwrap();
     });
 
-    // Write events
-    writer.append(1, 1, TestEvent::Ping(100))?;
-    writer.append(1, 2, TestEvent::Ping(200))?;
+    // Produce events
+    let events = vec!["Event 1", "Event 2", "Event 3"];
+    for (i, content) in events.iter().enumerate() {
+        let event = TestEvent {
+            content: content.to_string(),
+        };
+        let metadata = TestMetadata {
+            stream_id: 1,
+            version: (i + 1) as u32,
+        };
+        db.append(Payload::new(event, metadata), ExpectedVersion::Auto)?;
+    }
 
-    // Wait for processing (simple sleep for test)
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let results = received.lock().unwrap().clone();
-    assert_eq!(results, vec![100, 200]);
+    {
+        let rec = received.lock().unwrap();
+        assert_eq!(rec.len(), 3);
+        assert_eq!(rec[0], "Event 1");
+    }
 
+    handle.abort();
     Ok(())
 }

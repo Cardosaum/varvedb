@@ -6,7 +6,7 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::model::Payload;
+use crate::model::StoragePayload;
 use crate::storage::Storage;
 use rkyv::bytecheck::CheckBytes;
 use sha2::{Digest, Sha256};
@@ -117,7 +117,7 @@ where
     /// *   Serialization of the event fails.
     /// *   Encryption fails (if enabled).
     /// *   The underlying storage encounters an I/O error.
-    pub fn append(&mut self, stream_id: u128, version: u32, event: E) -> crate::error::Result<()> {
+    pub fn append(&mut self, stream_id: u128, version: u32, event: E) -> crate::error::Result<u64> {
         let _timer = self
             .metrics
             .as_ref()
@@ -175,10 +175,10 @@ where
             self.storage
                 .blobs
                 .put(&mut txn, hash_array.as_slice(), event_bytes.as_slice())?;
-            Payload::BlobRef(hash_array)
+            StoragePayload::BlobRef(hash_array)
         } else {
             // Small Payload: Inline
-            Payload::Inline(event_bytes.into_vec())
+            StoragePayload::Inline(event_bytes.into_vec())
         };
 
         // Serialize Payload
@@ -226,7 +226,7 @@ where
             metrics.bytes_written.inc_by(bytes_len);
         }
 
-        Ok(())
+        Ok(new_seq)
     }
 }
 
@@ -272,6 +272,28 @@ where
     }
 }
 
+impl<'a, E> EventView<'a, E>
+where
+    E: rkyv::Archive,
+{
+    /// Converts this `EventView` into an owned version, detaching it from the transaction.
+    ///
+    /// This involves cloning the data to ensure it owns its memory (independent of the transaction).
+    /// Note: This performs a copy of the underlying data.
+    pub fn into_owned<'b>(self) -> EventView<'b, E> {
+        match self.data {
+            EventData::Borrowed(b) => EventView {
+                data: EventData::Owned(b.to_vec()),
+                _marker: std::marker::PhantomData,
+            },
+            EventData::Owned(v) => EventView {
+                data: EventData::Owned(v),
+                _marker: std::marker::PhantomData,
+            },
+        }
+    }
+}
+
 /// Provides zero-copy access to events from the store.
 ///
 /// The `Reader` allows efficient retrieval of events by sequence number. It leverages memory-mapped
@@ -312,6 +334,17 @@ pub struct Reader<E> {
     _marker: std::marker::PhantomData<E>,
 }
 
+impl<E> Clone for Reader<E> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            metrics: self.metrics.clone(),
+            key_manager: self.key_manager.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<E> Reader<E>
 where
     E: rkyv::Archive,
@@ -337,6 +370,11 @@ where
     pub fn with_metrics(mut self, metrics: Arc<VarveMetrics>) -> Self {
         self.metrics = Some(metrics);
         self
+    }
+
+    /// Returns a reference to the underlying storage.
+    pub fn storage(&self) -> &Storage {
+        &self.storage
     }
 
     /// Retrieves an event by its global sequence number.
@@ -397,15 +435,15 @@ where
                 };
 
                 let archived_payload = rkyv::access::<
-                    crate::model::ArchivedPayload,
+                    crate::model::ArchivedStoragePayload,
                     rkyv::rancor::Error,
                 >(payload_bytes)?;
 
                 let final_data = match archived_payload {
-                    crate::model::ArchivedPayload::Inline(inline_bytes) => {
+                    crate::model::ArchivedStoragePayload::Inline(inline_bytes) => {
                         EventData::Owned(inline_bytes.as_slice().to_vec())
                     }
-                    crate::model::ArchivedPayload::BlobRef(hash) => {
+                    crate::model::ArchivedStoragePayload::BlobRef(hash) => {
                         let blob_bytes =
                             self.storage
                                 .blobs
@@ -518,214 +556,6 @@ where
             .map(|seq| self.get(txn, seq))
             .transpose()
             .map(Option::flatten)
-    }
-}
-
-pub trait EventHandler<E>
-where
-    E: rkyv::Archive,
-{
-    fn handle(&mut self, event: &E::Archived) -> crate::error::Result<()>;
-}
-
-/// Manages a reactive event loop for processing events.
-///
-/// The `Processor` subscribes to new event notifications and processes them sequentially
-/// using the provided `EventHandler`. It automatically manages the consumer cursor,
-/// ensuring at-least-once processing semantics.
-///
-/// # Examples
-///
-/// ```rust
-/// use varvedb::engine::EventHandler;
-/// use varvedb::storage::{Storage, StorageConfig};
-/// use rkyv::{Archive, Serialize, Deserialize};
-/// use tempfile::tempdir;
-/// use std::sync::{Arc, Mutex};
-///
-/// #[derive(Archive, Serialize, Deserialize, Debug)]
-/// #[rkyv(derive(Debug))]
-/// struct MyEvent { pub data: u32 }
-///
-/// struct MyHandler { count: Arc<Mutex<u32>> }
-/// impl EventHandler<MyEvent> for MyHandler {
-///     fn handle(&mut self, event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
-///         let mut count = self.count.lock().unwrap();
-///         *count += event.data.to_native();
-///         Ok(())
-///     }
-/// }
-/// ```
-/// Configuration for the event processor.
-#[derive(Clone, Copy, Debug)]
-pub struct ProcessorConfig {
-    /// Maximum number of events to process before committing the cursor.
-    pub batch_size: usize,
-    /// Maximum time to wait before committing the cursor, even if batch_size is not reached.
-    pub batch_timeout: std::time::Duration,
-}
-
-impl Default for ProcessorConfig {
-    fn default() -> Self {
-        Self {
-            batch_size: crate::constants::DEFAULT_BATCH_SIZE,
-            batch_timeout: std::time::Duration::from_millis(
-                crate::constants::DEFAULT_BATCH_TIMEOUT_MS,
-            ),
-        }
-    }
-}
-
-pub struct Processor<E, H> {
-    reader: Reader<E>,
-    handler: H,
-    consumer_id: u64,
-    rx: tokio::sync::watch::Receiver<u64>,
-    config: ProcessorConfig,
-}
-
-impl<E, H> Processor<E, H>
-where
-    E: rkyv::Archive,
-    E::Archived: for<'a> CheckBytes<HighValidator<'a, RancorError>>,
-    H: EventHandler<E>,
-{
-    /// Creates a new `Processor`.
-    ///
-    /// *   `consumer_id`: A unique identifier for this consumer. Used to persist the cursor position.
-    pub fn new(
-        reader: Reader<E>,
-        handler: H,
-        consumer_id: impl Into<u64>,
-        rx: tokio::sync::watch::Receiver<u64>,
-    ) -> Self {
-        Self {
-            reader,
-            handler,
-            consumer_id: consumer_id.into(),
-            rx,
-            config: ProcessorConfig::default(),
-        }
-    }
-
-    /// Sets the configuration for the processor.
-    pub fn with_config(mut self, config: ProcessorConfig) -> Self {
-        self.config = config;
-        self
-    }
-
-    /// Starts the event processing loop.
-    ///
-    /// This method runs indefinitely, processing events as they arrive.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// *   The underlying storage encounters an I/O error.
-    /// *   The event handler returns an error.
-    /// *   The event notification channel is closed.
-    pub async fn run(&mut self) -> crate::error::Result<()> {
-        // Initial cursor load
-        let mut current_seq = {
-            let txn = self.reader.storage.env.read_txn()?;
-            self.reader
-                .storage
-                .consumer_cursors
-                .get(&txn, &self.consumer_id)?
-                .unwrap_or(0)
-        };
-
-        loop {
-            let head_seq = *self.rx.borrow();
-
-            if current_seq < head_seq {
-                // Synchronously process the backlog to ensure RoTxn is not held across await
-                current_seq = self.process_backlog(current_seq, head_seq)?;
-            }
-
-            // Check if we are caught up
-            if current_seq >= *self.rx.borrow() {
-                // Wait for new events
-                self.rx.changed().await.map_err(|_| {
-                    crate::error::Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::BrokenPipe,
-                        "Sender dropped",
-                    ))
-                })?;
-            }
-        }
-    }
-
-    /// Processes events from current_seq to target_seq using batched transactions.
-    /// This method is synchronous to ensure RoTxn is not held across await points.
-    fn process_backlog(
-        &mut self,
-        mut current_seq: u64,
-        target_seq: u64,
-    ) -> crate::error::Result<u64> {
-        let mut pending_updates = 0;
-        let mut last_commit = std::time::Instant::now();
-        let mut read_txn: Option<heed::RoTxn> = None;
-
-        while current_seq < target_seq {
-            // Ensure we have a read transaction
-            if read_txn.is_none() {
-                read_txn = Some(self.reader.storage.env.read_txn()?);
-            }
-            let txn = read_txn.as_ref().unwrap();
-
-            let mut processed_any = false;
-            let mut reached_snapshot_end = false;
-
-            // Inner loop: process batch
-            while current_seq < target_seq {
-                let next_seq = current_seq + 1;
-                if let Some(event) = self.reader.get(txn, next_seq)? {
-                    self.handler.handle(&event)?;
-                    current_seq = next_seq;
-                    pending_updates += 1;
-                    processed_any = true;
-                } else {
-                    reached_snapshot_end = true;
-                    break;
-                }
-
-                if pending_updates >= self.config.batch_size {
-                    break;
-                }
-            }
-
-            // Commit if needed
-            if pending_updates >= self.config.batch_size
-                || (processed_any && last_commit.elapsed() >= self.config.batch_timeout)
-            {
-                let mut wtxn = self.reader.storage.env.write_txn()?;
-                self.reader.storage.consumer_cursors.put(
-                    &mut wtxn,
-                    &self.consumer_id,
-                    &current_seq,
-                )?;
-                wtxn.commit()?;
-                pending_updates = 0;
-                last_commit = std::time::Instant::now();
-            }
-
-            if reached_snapshot_end {
-                read_txn = None;
-            }
-        }
-
-        // Final commit if any pending updates remain
-        if pending_updates > 0 {
-            let mut wtxn = self.reader.storage.env.write_txn()?;
-            self.reader
-                .storage
-                .consumer_cursors
-                .put(&mut wtxn, &self.consumer_id, &current_seq)?;
-            wtxn.commit()?;
-        }
-
-        Ok(current_seq)
     }
 }
 

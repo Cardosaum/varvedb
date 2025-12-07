@@ -28,23 +28,21 @@ fn test_master_key_encryption() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let storage = Storage::open(config.clone())?;
-    let mut writer = Writer::<SecEvent>::new(storage.clone());
+    {
+        let storage = Storage::open(config.clone())?;
+        let mut writer = Writer::<SecEvent>::new(storage.clone());
 
-    let event = SecEvent {
-        data: "Secret Data".to_string(),
-    };
-    writer.append(1, 1, event)?;
+        let event = SecEvent {
+            data: "Secret Data".to_string(),
+        };
+        writer.append(1, 1, event)?;
 
-    // 1. Verify we can read it back with the correct key
-    let reader = Reader::<SecEvent>::new(storage.clone());
-    let txn = storage.env.read_txn()?;
-    let read_event = reader.get(&txn, 1)?.expect("Event should exist");
-    assert_eq!(read_event.data, "Secret Data");
-    drop(txn);
-    drop(reader);
-    drop(writer);
-    drop(storage); // Close storage
+        // 1. Verify we can read it back with the correct key
+        let reader = Reader::<SecEvent>::new(storage.clone());
+        let txn = storage.env.read_txn()?;
+        let read_event = reader.get(&txn, 1)?.expect("Event should exist");
+        assert_eq!(read_event.data, "Secret Data");
+    } // storage, writer, reader, txn dropped here
 
     // 2. Attack Simulation: Open as if we are an attacker (no master key, or ignoring encryption)
     let attack_config = StorageConfig {
@@ -94,24 +92,24 @@ fn test_wrong_master_key_access() -> Result<(), Box<dyn std::error::Error>> {
     let wrong_key = [0xBBu8; 32];
 
     // 1. Write with correct key
-    let config = StorageConfig {
-        path: dir.path().to_path_buf(),
-        encryption_enabled: true,
-        master_key: Some(zeroize::Zeroizing::new(master_key)),
-        ..Default::default()
-    };
-    let storage = Storage::open(config.clone())?;
-    let mut writer = Writer::<SecEvent>::new(storage.clone());
-    writer.append(
-        1,
-        1,
-        SecEvent {
-            data: "Sensitive".to_string(),
-        },
-    )?;
-
-    drop(writer);
-    drop(storage);
+    // 1. Write with correct key
+    {
+        let config = StorageConfig {
+            path: dir.path().to_path_buf(),
+            encryption_enabled: true,
+            master_key: Some(zeroize::Zeroizing::new(master_key)),
+            ..Default::default()
+        };
+        let storage = Storage::open(config.clone())?;
+        let mut writer = Writer::<SecEvent>::new(storage.clone());
+        writer.append(
+            1,
+            1,
+            SecEvent {
+                data: "Sensitive".to_string(),
+            },
+        )?;
+    } // storage and writer dropped
 
     // 2. Try to read with WRONG key using high-level API
     let attack_config = StorageConfig {

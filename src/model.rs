@@ -12,10 +12,25 @@ use rkyv::{Archive, Deserialize, Serialize};
 #[derive(Archive, Serialize, Deserialize, Debug, PartialEq)]
 #[rkyv(derive(Debug))]
 #[repr(C)]
-pub enum Payload {
+pub enum StoragePayload {
     /// Small data stored directly in the event log.
     Inline(Vec<u8>),
     /// Large data stored in the blob store, referenced by its hash.
     /// The hash is a SHA-256 hash (32 bytes).
     BlobRef([u8; 32]),
+}
+
+/// A container for an event and its associated metadata.
+///
+/// This structure is used to pass data to `Varve::append`.
+pub struct Payload<E, M> {
+    pub event: E,
+    pub metadata: M,
+}
+
+impl<E, M> Payload<E, M> {
+    /// Creates a new `Payload` with the given event and metadata.
+    pub fn new(event: E, metadata: M) -> Self {
+        Self { event, metadata }
+    }
 }

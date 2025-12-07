@@ -1,97 +1,88 @@
-// This file is part of VarveDB.
-//
-// Copyright (C) 2025 Matheus Cardoso <varvedb@matheus.sbs>
-//
-// This Source Code Form is subject to the terms of the Mozilla Public License
-// v. 2.0. If a copy of the MPL was not distributed with this file, You can
-// obtain one at http://mozilla.org/MPL/2.0/.
-
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile::tempdir;
-use varvedb::engine::{EventHandler, Processor, ProcessorConfig, Reader, Writer};
-use varvedb::storage::{Storage, StorageConfig};
+use varvedb::processor::{EventHandler, Processor, ProcessorConfig};
+use varvedb::traits::MetadataExt;
+use varvedb::{ExpectedVersion, Payload, Varve};
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
-#[rkyv(derive(Debug))]
-struct MyEvent {
-    pub data: u32,
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+#[repr(C)]
+pub struct MyEvent {
+    pub id: u32,
 }
 
-struct MyHandler {
-    count: Arc<Mutex<u32>>,
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+#[repr(C)]
+pub struct MyMetadata {
+    pub stream_id: u128,
+    pub version: u32,
 }
 
-impl EventHandler<MyEvent> for MyHandler {
-    fn handle(&mut self, event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
-        let mut count = self.count.lock().unwrap();
-        *count += event.data.to_native();
+impl MetadataExt for MyMetadata {
+    fn stream_id(&self) -> u128 {
+        self.stream_id
+    }
+    fn version(&self) -> u32 {
+        self.version
+    }
+}
+
+struct BatchHandler {
+    pub processed_count: Arc<Mutex<usize>>,
+}
+
+impl EventHandler<MyEvent> for BatchHandler {
+    fn handle(&mut self, _event: &ArchivedMyEvent) -> varvedb::error::Result<()> {
+        let mut count = self.processed_count.lock().unwrap();
+        *count += 1;
         Ok(())
     }
 }
 
 #[tokio::test]
-async fn test_processor_batching() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_batch_processing() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
-    let config = StorageConfig {
-        path: dir.path().to_path_buf(),
-        ..Default::default()
-    };
-    let storage = Storage::open(config)?;
+    let db_path = dir.path().join("batching_test.mdb");
+    let mut db = Varve::open(&db_path)?;
 
-    // 1. Write many events
-    let mut writer = Writer::new(storage.clone());
-    let event_count = 50;
-    for i in 1..=event_count {
-        writer.append(1, i, MyEvent { data: 1 })?;
+    // Populate events
+    let event_count = 100;
+    for i in 0..event_count {
+        let event = MyEvent { id: i };
+        let metadata = MyMetadata {
+            stream_id: 1,
+            version: i + 1,
+        };
+        db.append(Payload::new(event, metadata), ExpectedVersion::Auto)?;
     }
 
-    // 2. Configure Processor with batch size
-    let count = Arc::new(Mutex::new(0));
-    let handler = MyHandler {
-        count: count.clone(),
+    let processed_count = Arc::new(Mutex::new(0));
+    let handler = BatchHandler {
+        processed_count: processed_count.clone(),
     };
 
-    let reader = Reader::<MyEvent>::new(storage.clone());
-    let rx = writer.subscribe();
-
-    let config = ProcessorConfig {
+    let consumer_id = 12345u64;
+    let mut processor = Processor::new(&db, handler, consumer_id).with_config(ProcessorConfig {
         batch_size: 10,
-        batch_timeout: Duration::from_secs(1),
-    };
+        batch_timeout: Duration::from_millis(10),
+    });
 
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    "batch_consumer".hash(&mut hasher);
-    let consumer_id = hasher.finish();
+    let handle = tokio::spawn(async move {
+        processor.run().await.unwrap();
+    });
 
-    let mut processor = Processor::new(reader, handler, consumer_id, rx).with_config(config);
+    // Wait for processing
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // 3. Run processor in background
-    let handle = tokio::spawn(async move { processor.run().await });
-
-    // 4. Wait for processing
-    // Since run() loops forever, we need to check the count and then abort
-    let start = std::time::Instant::now();
-    loop {
-        {
-            let c = count.lock().unwrap();
-            if *c >= event_count {
-                break;
-            }
-        }
-        if start.elapsed() > Duration::from_secs(5) {
-            panic!("Timed out waiting for events");
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    // Check if processed
+    {
+        let count = processed_count.lock().unwrap();
+        assert_eq!(*count, event_count as usize);
     }
 
+    // Abort processor (since it runs forever)
     handle.abort();
-
-    // 5. Verify count
-    let final_count = *count.lock().unwrap();
-    assert_eq!(final_count, event_count);
 
     Ok(())
 }
