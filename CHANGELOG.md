@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-08
+
+### Bug Fixes
+
+- *(website)* Improve accessibility and architecture diagram interactions
+- *(website)* Remove section borders to prevent wave artifacts
+
+### Documentation
+
+- *(website)* Update book and website for rkyv 0.8 and processor api changes
+- *(website)* Add website audit issues and README
+- *(website)* Overhaul documentation with production-ready content
+- *(website)* Overhaul documentation with new structure and content
+
+### Features
+
+- Add optional serde support for serialization and deserialization in StorageConfig
+- *(website)* Add documentation section and syntax highlighting
+- *(website)* Improve copy, fix CTAs, and add quick start guide
+- *(website)* Self-host fonts using @fontsource packages
+- *(website)* Add JSON-LD structured data for SEO
+- *(website)* Animate architecture diagram data flow
+- *(website)* Add holographic strata 3D hero
+- *(website)* Implement premium search UI with pagefind integration and card layout
+
+### Miscellaneous Tasks
+
+- Upgrade rkyv to 0.8
+- Update .gitignore to include .vscode directory
+- Add copyright notice and licensing information to test files
+- Add copyright notice and licensing information to quickstart_verified.rs
+
+### Performance
+
+- *(website)* Optimize logo.svg and remove legacy style.css
+
+### Refactor
+
+- *(website)* Split style.css into modular css files
+- *(website)* Migrate to Astro and centralize documentation
+
+### Styling
+
+- *(website)* Improve website color contrast
+- *(website)* Fix admonition rendering and update landing page docs link
+
 ## [0.2.1] - 2025-12-04
 
 ### Features
