@@ -7,7 +7,7 @@
 }
 
 .code-header {
-  background: #161b22;
+  background: var(--bg-card-hover);
   padding: 0.75rem 1rem;
   border-bottom: 1px solid #30363d;
   display: flex;
@@ -34,7 +34,7 @@
 .code-title {
   font-family: var(--font-mono);
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--text-muted);
 }
 
 .code-window pre {
@@ -47,7 +47,7 @@
   overflow-x: auto;
 }
 
-.code-window .comment { color: #8b949e; font-style: italic; }
+.code-window .comment { color: var(--text-muted); font-style: italic; }
 .code-window .keyword { color: #ff7b72; }
 .code-window .string { color: #a5d6ff; }
 

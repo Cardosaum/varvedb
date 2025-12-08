@@ -64,18 +64,18 @@
   display: inline-flex;
   align-items: center;
   gap: 1rem;
-  color: #f0f6fc;
+  color: var(--text-main);
   font-size: 1rem;
   backdrop-filter: blur(4px);
   transition: border-color 0.2s;
 }
 
 .install-cmd:hover {
-  border-color: #58a6ff;
+  border-color: var(--primary);
 }
 
 .install-cmd .prefix {
-  color: #58a6ff;
+  color: var(--primary);
   user-select: none;
 }
 

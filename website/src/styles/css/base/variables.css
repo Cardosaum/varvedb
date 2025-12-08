@@ -1,15 +1,15 @@
 :root {
-  --bg-main: #0f1117; /* Deep, neutral dark */
-  --bg-card: #161b22;
-  --bg-card-hover: #1c2128;
+  --bg-main: #02040a; /* Deep, neutral dark */
+  --bg-card: #0d1117;
+  --bg-card-hover: #161b22;
   
   --primary: #38bdf8;
   --primary-hover: #0ea5e9;
   --secondary: #94a3b8;
   --accent: #fbbf24;
   
-  --text-main: #f0f6fc;
-  --text-muted: #9ca3af; /* Lightened from #8b949e for better contrast */
+  --text-main: #ffffff;
+  --text-muted: #cbd5e1; /* Lightened from #8b949e for better contrast */
   
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-heading: 'Outfit', sans-serif;
