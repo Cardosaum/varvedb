@@ -1,0 +1,73 @@
+/* GitHub Alerts Styling */
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  border-left: 0.25em solid;
+  border-radius: 6px;
+  background-color: rgba(255,255,255,0.02);
+  color: var(--text-main);
+  /* Override default blockquote styling if needed */
+  font-style: normal !important;
+}
+
+.markdown-alert-title {
+  display: flex;
+  font-weight: 600;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.markdown-alert-title svg {
+  margin-right: 0.5rem;
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+/* Note */
+.markdown-alert-note {
+  border-color: #1f6feb;
+}
+.markdown-alert-note .markdown-alert-title {
+  color: #58a6ff;
+}
+
+/* Tip */
+.markdown-alert-tip {
+  border-color: #238636;
+}
+.markdown-alert-tip .markdown-alert-title {
+  color: #3fb950;
+}
+
+/* Important */
+.markdown-alert-important {
+  border-color: #8957e5;
+}
+.markdown-alert-important .markdown-alert-title {
+  color: #a371f7;
+}
+
+/* Warning */
+.markdown-alert-warning {
+  border-color: #9e6a03;
+}
+.markdown-alert-warning .markdown-alert-title {
+  color: #d29922;
+}
+
+/* Caution */
+.markdown-alert-caution {
+  border-color: #da3633;
+}
+.markdown-alert-caution .markdown-alert-title {
+  color: #f85149;
+}
+
+/* Blockquote resets within alerts */
+.markdown-alert > *:first-child {
+  margin-top: 0;
+}
+.markdown-alert > *:last-child {
+  margin-bottom: 0;
+}
