@@ -3,32 +3,41 @@
 
 # Introduction
 
-**VarveDB** is a high-performance, embedded, append-only event store for Rust. It is designed to provide a persistent, ACID-compliant event log optimized for high-throughput event sourcing applications.
+**VarveDB** is a high-performance, embedded, append-only event store for Rust. It provides a persistent, ACID-compliant event log optimized for high-throughput event sourcing applications.
 
-By leveraging **LMDB** (Lightning Memory-Mapped Database) for reliable storage and **rkyv** for zero-copy deserialization, VarveDB ensures minimal overhead and maximum performance.
+Built on **LMDB** (Lightning Memory-Mapped Database) and **rkyv**, VarveDB is designed for scenarios where performance and data integrity are paramount, offering zero-copy access to data and strict concurrency controls.
 
 ## Key Features
 
-*   **Zero-Copy Access**: Events are mapped directly from disk to memory using `rkyv`, avoiding expensive deserialization steps.
-*   **ACID Transactions**: Writes are Atomic, Consistent, Isolated, and Durable.
-*   **Optimistic Concurrency**: Built-in stream versioning prevents race conditions and ensures data integrity.
-*   **Reactive Interface**: Real-time event subscriptions via `tokio::watch` allow for building responsive, event-driven systems.
-*   **Authenticated Encryption**: Optional AES-256-GCM encryption with Additional Authenticated Data (AAD) binding ensures data security at rest.
-*   **GDPR Compliance**: Support for crypto-shredding via key deletion allows for compliant data removal.
+*   **Zero-Copy Access**: Events are mapped directly from disk to memory using [rkyv](https://rkyv.org/), eliminating deserialization overhead for read operations.
+*   **Optimistic Concurrency**: Writes are guarded by `ExpectedVersion`, allowing safe concurrent access without heavy locking.
+*   **Embedded Architecture**: Runs in-process with your application, removing the latency and operational complexity of external database servers.
+*   **Strongly Typed**: Enforce schema correctness at compile time with Rust types.
+*   **Reactive**: subscribe to changes in real-time using efficient `tokio::watch` channels.
+*   **Encryption**: Optional authenticated encryption (AES-256-GCM) ensures data is secure at rest without sacrificing the append-only nature.
 
 ## Why VarveDB?
 
-VarveDB fills the gap for a lightweight, embedded event store in the Rust ecosystem. Unlike heavy external databases like Kafka or EventStoreDB, VarveDB runs directly within your application process. This makes it ideal for:
+Traditional databases often struggle with the specific requirements of event sourcing—immutable logs, global ordering, and replayability. External event stores like Kafka or EventStoreDB introduce network latency and operational overhead that may be unnecessary for reliable edge or single-node applications.
 
-*   **Microservices**: Keep your services self-contained with their own event logs.
-*   **IoT and Edge Devices**: Efficient storage with low resource footprint.
-*   **High-Frequency Trading**: Ultra-low latency event persistence.
-*   **Local-First Applications**: robust data storage for offline-capable apps.
+VarveDB bridges this gap by providing:
+1.  **Speed**: By memory-mapping the database file, reading an event is as fast as reading a byte array from memory.
+2.  **Simplicity**: No external clusters to manage. Just include it as a crate.
+3.  **Safety**: ACID transactions ensure that your event log is never corrupted, even in the event of power failure.
+
+## Use Cases
+
+*   **Command Sourcing**: Store every state change in your application as an immutable sequence of events.
+*   **Audit Logging**: cryptographically verifiable logs for compliance and security.
+*   **Embedded Systems**: Efficient data storage for IoT devices where resources are constrained.
+*   **High-Frequency Data**: Capture market data or sensor readings with minimal latency.
+*   **Local-First Software**: Build offline-capable applications that sync when online, using the event log as the source of truth.
 
 ## Core Concepts
 
-*   **Stream**: An ordered sequence of events, identified by a `StreamID`.
-*   **Event**: The fundamental unit of data, which can be any serializable Rust struct.
-*   **Writer**: Appends events to the store.
-*   **Reader**: Reads events from the store.
-*   **Processor**: Subscribes to new events and processes them in real-time.
+*   **Varve**: The main entry point to the database, handling transactions and coordination.
+*   **Event**: A user-defined struct containing domain data. Must be efficiently serializable via `rkyv`.
+*   **Metadata**: Sidecar information for an event (e.g., `StreamID`, timestamp, `UserID`).
+*   **Stream**: A logical sequence of events sharing a `StreamID`, ordered by version.
+*   **Processor**: A consumer that persistently tracks its position in the event log, ideal for building read models or projections.
+

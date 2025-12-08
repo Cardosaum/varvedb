@@ -1,14 +1,14 @@
 # Architecture
 
-VarveDB is built on a layered architecture that separates storage concerns from the high-level event sourcing API.
+VarveDB is built on a layered architecture that prioritizes performance, data integrity, and simplicity. This document details the internal design decisions and how data flows through the system.
 
 ## High-Level Overview
 
-The system consists of three main components that interact with the underlying storage:
+The system consists of three main components that interact with the underlying storage layer:
 
-1.  **Writer**: Handles appending events to the log. It manages transactions, concurrency control, and encryption.
+1.  **Writer**: Handles appending events to the log. It manages transactions, strict serialization of writes, and optimistic concurrency checks.
 2.  **Reader**: Provides efficient access to stored events. It uses zero-copy deserialization to read data directly from the memory-mapped file.
-3.  **Processor**: A background task that subscribes to new events and dispatches them to registered handlers.
+3.  **Processor**: A framework for consuming events sequentially, tracking progress, and performing side effects.
 
 ```mermaid
 flowchart TD

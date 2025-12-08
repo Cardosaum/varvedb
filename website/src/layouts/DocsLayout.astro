@@ -8,7 +8,7 @@ const { title } = Astro.props;
 const allDocs = await getCollection('docs');
 // Sort by some logic if needed, for now alphabetical or manual list
 // We can define a manual order if we want
-const order = ['introduction', 'quick_start', 'architecture', 'usage', 'example_application'];
+const order = ['introduction', 'quick_start', 'concepts', 'architecture', 'processor', 'performance'];
 const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(Boolean);
 ---
 
