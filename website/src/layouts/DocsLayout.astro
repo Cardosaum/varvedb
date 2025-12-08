@@ -4,12 +4,30 @@ import { getCollection } from 'astro:content';
 
 const { title } = Astro.props;
 
-// Fetch all docs to build the sidebar
 const allDocs = await getCollection('docs');
-// Sort by some logic if needed, for now alphabetical or manual list
-// We can define a manual order if we want
-const order = ['introduction', 'quick_start', 'concepts', 'architecture', 'processor', 'performance'];
-const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(Boolean);
+
+// Define Navigation Structure
+// Support Groups (items array), Single links (slug), or External Links (href)
+const navigation = [
+  { title: 'Introduction', slug: 'introduction' },
+  { title: 'Quick Start', slug: 'quick_start' },
+  { title: 'Core Concepts', slug: 'concepts' },
+  { 
+    title: 'Guides', 
+    items: [
+        { title: 'Handling Concurrency', slug: 'guides/concurrency' },
+        { title: 'Event Processing', slug: 'guides/processing' },
+    ]
+  },
+  { title: 'API Reference', href: 'https://docs.rs/varvedb/latest/varvedb/' },
+];
+
+const currentPath = Astro.url.pathname;
+
+function isActive(slug) {
+    if (!slug) return false;
+    return currentPath.includes(slug);
+}
 ---
 
 <BaseLayout title={title}>
@@ -17,12 +35,43 @@ const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(
     <aside class="docs-sidebar">
       <nav>
         <ul>
-          {sortedDocs.map(doc => (
-            <li>
-              <a href={`/docs/${doc.slug}`} class={Astro.url.pathname.includes(doc.slug) ? 'active' : ''}>
-                {doc.data.title || doc.slug.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-              </a>
-            </li>
+          {navigation.map(item => (
+            <>
+              {item.items ? (
+                // Group Header & Items
+                <li class="nav-group">
+                  <span class="nav-group-title">{item.title}</span>
+                  <ul class="nav-group-items">
+                    {item.items.map(subItem => (
+                      <li>
+                        {subItem.href ? (
+                            <a href={subItem.href} target="_blank" rel="noopener noreferrer">
+                                {subItem.title} ↗
+                            </a>
+                        ) : (
+                            <a href={`/docs/${subItem.slug}`} class={isActive(subItem.slug) ? 'active' : ''}>
+                                {subItem.title}
+                            </a>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ) : (
+                // Top Level Link
+                <li>
+                  {item.href ? (
+                      <a href={item.href} target="_blank" rel="noopener noreferrer">
+                        {item.title} ↗
+                      </a>
+                  ) : (
+                      <a href={`/docs/${item.slug}`} class={isActive(item.slug) ? 'active' : ''}>
+                        {item.title}
+                      </a>
+                  )}
+                </li>
+              )}
+            </>
           ))}
         </ul>
       </nav>
@@ -50,18 +99,45 @@ const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(
     padding-right: 1.5rem;
   }
 
-  .docs-sidebar ul {
+  .docs-sidebar nav > ul {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
 
+  /* Navigation Groups */
+  .nav-group {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .nav-group-title {
+    display: block;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    padding-left: 0.5rem; /* Match link padding visual alignment if needed */
+  }
+
+  .nav-group-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-left: 0.5rem; /* Indent sub-items slightly */
+    border-left: 1px solid rgba(255,255,255,0.05); /* Subtle tree line */
+    margin-left: 0.5rem;
+  }
+
   .docs-sidebar a {
     display: block;
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.8rem;
     border-radius: 6px;
     color: var(--text-muted);
     transition: all 0.2s;
+    font-size: 0.95rem;
   }
 
   .docs-sidebar a:hover {
@@ -75,14 +151,14 @@ const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(
     font-weight: 600;
   }
 
+  /* Content Styles */
   .docs-content {
     flex: 1;
-    min-width: 0; /* Prevent overflow */
+    min-width: 0;
     line-height: 1.7;
     color: #c9d1d9;
   }
 
-  /* Typography for Markdown Content */
   .docs-content :global(h1) {
     font-family: var(--font-heading);
     font-size: 2.5rem;
@@ -127,7 +203,7 @@ const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(
     overflow-x: auto;
     margin-bottom: 1.5rem;
   }
-
+  
   .docs-content :global(pre code) {
     background: none;
     padding: 0;
@@ -152,6 +228,18 @@ const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(
     text-decoration: underline;
   }
 
+    .docs-content :global(blockquote) {
+        border-left: 4px solid var(--primary);
+        padding-left: 1rem;
+        margin-left: 0;
+        margin-right: 0;
+        color: var(--text-muted);
+        background: rgba(255,255,255,0.02);
+        padding: 1rem;
+        border-radius: 0 4px 4px 0;
+    }
+
+
   @media (max-width: 768px) {
     .docs-container {
       flex-direction: column;
@@ -162,6 +250,12 @@ const sortedDocs = order.map(slug => allDocs.find(d => d.slug === slug)).filter(
       border-right: none;
       border-bottom: 1px solid #30363d;
       padding-bottom: 1.5rem;
+    }
+    
+    .nav-group-items {
+        border-left: none;
+        padding-left: 0;
+        margin-left: 0;
     }
   }
 </style>

@@ -1,4 +1,6 @@
-# Event Processing
+---
+title: "Event Processing"
+---
 
 The real power of an event store comes from consuming events to build read models, trigger external actions, or drive workflows. VarveDB provides a robust **Processor** framework for this.
 
