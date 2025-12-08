@@ -1,7 +1,7 @@
 .hero {
   padding: 8rem 0 6rem;
   text-align: center;
-  border-bottom: 1px solid #21262d;
+
   position: relative; /* Ensure relative positioning for absolute children */
   overflow: hidden; /* Clip the canvas if it overflows */
 }
