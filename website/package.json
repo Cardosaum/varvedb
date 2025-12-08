@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
     "check": "astro check"
   },
   "devDependencies": {
+    "pagefind": "^1.4.0",
     "vite": "^7.2.4"
   },
   "dependencies": {

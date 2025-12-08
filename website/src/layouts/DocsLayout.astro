@@ -2,9 +2,9 @@
 import BaseLayout from './BaseLayout.astro';
 import { getCollection } from 'astro:content';
 
-const { title } = Astro.props;
+import Search from '../components/Search.astro';
 
-const allDocs = await getCollection('docs');
+const { title } = Astro.props;
 
 // Define Navigation Structure
 // Support Groups (items array), Single links (slug), or External Links (href)
@@ -31,50 +31,53 @@ function isActive(slug) {
 ---
 
 <BaseLayout title={title}>
-  <div class="docs-container container">
+  <div class="docs-container">
     <aside class="docs-sidebar">
-      <nav>
-        <ul>
-          {navigation.map(item => (
-            <>
-              {item.items ? (
-                // Group Header & Items
-                <li class="nav-group">
-                  <span class="nav-group-title">{item.title}</span>
-                  <ul class="nav-group-items">
-                    {item.items.map(subItem => (
-                      <li>
-                        {subItem.href ? (
-                            <a href={subItem.href} target="_blank" rel="noopener noreferrer">
-                                {subItem.title} ↗
-                            </a>
-                        ) : (
-                            <a href={`/docs/${subItem.slug}`} class={isActive(subItem.slug) ? 'active' : ''}>
-                                {subItem.title}
-                            </a>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ) : (
-                // Top Level Link
-                <li>
-                  {item.href ? (
-                      <a href={item.href} target="_blank" rel="noopener noreferrer">
-                        {item.title} ↗
-                      </a>
+      <div class="sidebar-sticky">
+          <Search />
+          <nav>
+            <ul>
+              {navigation.map(item => (
+                <>
+                  {item.items ? (
+                    // Group Header & Items
+                    <li class="nav-group">
+                      <span class="nav-group-title">{item.title}</span>
+                      <ul class="nav-group-items">
+                        {item.items.map(subItem => (
+                          <li>
+                            {subItem.href ? (
+                                <a href={subItem.href} target="_blank" rel="noopener noreferrer">
+                                    {subItem.title} ↗
+                                </a>
+                            ) : (
+                                <a href={`/docs/${subItem.slug}`} class={isActive(subItem.slug) ? 'active' : ''}>
+                                    {subItem.title}
+                                </a>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
                   ) : (
-                      <a href={`/docs/${item.slug}`} class={isActive(item.slug) ? 'active' : ''}>
-                        {item.title}
-                      </a>
+                    // Top Level Link
+                    <li>
+                      {item.href ? (
+                          <a href={item.href} target="_blank" rel="noopener noreferrer">
+                            {item.title} ↗
+                          </a>
+                      ) : (
+                          <a href={`/docs/${item.slug}`} class={isActive(item.slug) ? 'active' : ''}>
+                            {item.title}
+                          </a>
+                      )}
+                    </li>
                   )}
-                </li>
-              )}
-            </>
-          ))}
-        </ul>
-      </nav>
+                </>
+              ))}
+            </ul>
+          </nav>
+      </div>
     </aside>
     <article class="docs-content">
       <h1>{title}</h1>
@@ -86,17 +89,29 @@ function isActive(slug) {
 <style>
   .docs-container {
     display: flex;
-    gap: 3rem;
-    padding-top: 4rem;
+    gap: 4rem;
+    padding-top: 8rem; /* Increased top padding */
     padding-bottom: 4rem;
+    padding-left: 2rem;
+    padding-right: 2rem;
     min-height: 80vh;
+    max-width: 1600px;
+    margin: 0 auto;
   }
-
+  
+  /* Make sidebar sticky properly */
   .docs-sidebar {
-    width: 250px;
+    width: 280px;
     flex-shrink: 0;
     border-right: 1px solid #30363d;
-    padding-right: 1.5rem;
+    padding-right: 2rem;
+  }
+  
+  .sidebar-sticky {
+    position: sticky;
+    top: 8rem;
+    max-height: calc(100vh - 8rem);
+    overflow-y: auto;
   }
 
   .docs-sidebar nav > ul {
