@@ -19,20 +19,42 @@ use std::path::Path;
 /// Specifies the expected version of a stream during an append operation.
 ///
 /// This is used for optimistic concurrency control.
+///
+/// # Version Numbering
+///
+/// Versions within a stream are **1-indexed**. The first event appended to a stream
+/// will have version `1`, the second will have version `2`, and so on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpectedVersion {
     /// The event will be appended with the next available version number for the stream.
     ///
-    /// The database will automatically assert the next version is `current_version + 1`.
-    /// Be careful with this in concurrent environments, as it does not prevent race conditions
-    /// if you read the version, decide to write, and another writer writes in between.
-    /// Actually, `Auto` just means "I don't know the version, just append it".
-    /// If you care about concurrency, use `Exact`.
+    /// For an empty stream, the first event will get version `1`.
+    /// For a stream with events, the next version will be `current_max_version + 1`.
+    ///
+    /// # Concurrency Note
+    ///
+    /// `Auto` does not provide strong concurrency guarantees. If you read the current
+    /// version, decide to write, and another writer appends in between, `Auto` will
+    /// still succeed (appending at the next available version). If you need to ensure
+    /// you're appending to a specific version, use [`Exact`](Self::Exact).
     Auto,
     /// The event must be appended with this specific version number.
     ///
-    /// The operation will fail with `ConcurrencyConflict` if the version does not match
-    /// the next expected version in the sequence.
+    /// The operation will fail with [`ConcurrencyConflict`](crate::error::Error::ConcurrencyConflict)
+    /// if an event with this version already exists in the stream.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Append first event (version 1)
+    /// db.append(payload1, ExpectedVersion::Exact(1))?;
+    ///
+    /// // Append second event (version 2)
+    /// db.append(payload2, ExpectedVersion::Exact(2))?;
+    ///
+    /// // This will fail with ConcurrencyConflict (version 1 already exists)
+    /// db.append(payload3, ExpectedVersion::Exact(1))?; // Error!
+    /// ```
     Exact(u32),
 }
 
@@ -40,6 +62,67 @@ pub enum ExpectedVersion {
 ///
 /// `Varve` provides a high-level, unified API for reading and writing events.
 /// It wraps the underlying storage engine and manages transactions.
+///
+/// # Thread Safety and Async Usage
+///
+/// VarveDB is built on LMDB, which has specific threading requirements:
+///
+/// - **Read transactions are thread-local**: A read transaction (`RoTxn`) must be used
+///   on the same thread where it was created. Using it from a different thread will
+///   cause a `BadRslot` error.
+///
+/// - **Do NOT hold transactions across `.await` points**: In multi-threaded async runtimes
+///   (like Tokio's default runtime), tasks can be moved between threads at await points.
+///   If you hold a transaction or iterator across an await, you may get `BadRslot` errors.
+///
+/// ## Safe Patterns for Async Code
+///
+/// ### Option 1: Scope transactions before await points
+///
+/// ```rust,ignore
+/// // ✅ GOOD: Transaction is dropped before await
+/// {
+///     let txn = db.read_txn()?;
+///     let event = db.get_by_stream(&txn, stream_id, version)?;
+///     // process event...
+/// } // txn dropped here
+///
+/// some_async_operation().await; // Safe - no transaction held
+/// ```
+///
+/// ### Option 2: Use `spawn_blocking` for read operations
+///
+/// ```rust,ignore
+/// // ✅ GOOD: LMDB operations run on a dedicated thread
+/// let db_clone = db.clone();
+/// let events = tokio::task::spawn_blocking(move || {
+///     db_clone.iter()?.collect::<Vec<_>>()
+/// }).await?;
+/// ```
+///
+/// ### Option 3: Use a single-threaded runtime
+///
+/// ```rust,ignore
+/// // ✅ GOOD: No thread migration possible
+/// #[tokio::main(flavor = "current_thread")]
+/// async fn main() {
+///     // All operations stay on the same thread
+/// }
+/// ```
+///
+/// ## Anti-Patterns (Will Cause `BadRslot` Errors)
+///
+/// ```rust,ignore
+/// // ❌ BAD: Transaction held across await
+/// let txn = db.read_txn()?;
+/// some_async_operation().await; // Task might move to different thread!
+/// let event = db.get_by_stream(&txn, stream_id, version)?; // CRASH: BadRslot
+///
+/// // ❌ BAD: Iterator held across await
+/// let iter = db.iter()?;
+/// some_async_operation().await; // Task might move to different thread!
+/// for event in iter { /* ... */ } // CRASH: BadRslot
+/// ```
 #[derive(Clone)]
 pub struct Varve<E, M> {
     storage: Storage,
@@ -120,11 +203,63 @@ where
         self.writer.append(stream_id, version, payload.event)
     }
 
+    /// Creates a new read transaction for querying the database.
+    ///
+    /// Read transactions provide a consistent snapshot of the database at the time
+    /// of creation. Multiple reads within the same transaction will see the same data,
+    /// even if writes occur concurrently.
+    ///
+    /// # Thread Safety Warning
+    ///
+    /// **The returned transaction is NOT thread-safe.** It must be used on the same
+    /// thread where it was created. In async code with multi-threaded runtimes (like Tokio),
+    /// you must ensure the transaction is dropped before any `.await` point, or use
+    /// `spawn_blocking` to run all operations on a dedicated thread.
+    ///
+    /// See the [`Varve`] documentation for detailed async usage patterns.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Synchronous usage (always safe)
+    /// let txn = db.read_txn()?;
+    /// let event = db.get_by_stream(&txn, stream_id, 1)?;
+    /// drop(txn); // Explicit drop, or let it go out of scope
+    ///
+    /// // Async usage (scope the transaction)
+    /// {
+    ///     let txn = db.read_txn()?;
+    ///     let event = db.get_by_stream(&txn, stream_id, 1)?;
+    /// } // txn dropped before any await
+    /// some_async_fn().await;
+    /// ```
     pub fn read_txn(&self) -> crate::error::Result<heed::RoTxn<'_>> {
         self.storage.env.read_txn().map_err(Into::into)
     }
 
     /// Retrieves an event by its stream ID and version.
+    ///
+    /// # Arguments
+    ///
+    /// * `txn` - A read transaction obtained from [`read_txn()`](Self::read_txn).
+    /// * `stream_id` - The unique identifier of the stream.
+    /// * `version` - The version number within the stream (1-indexed when using `ExpectedVersion::Auto`).
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(event))` - The event exists and was successfully retrieved.
+    /// * `Ok(None)` - No event exists at the specified stream/version.
+    /// * `Err(...)` - An error occurred during retrieval.
+    ///
+    /// # Thread Safety
+    ///
+    /// The `txn` parameter must be used on the same thread where it was created.
+    /// See [`read_txn()`](Self::read_txn) and [`Varve`] documentation for async usage patterns.
+    ///
+    /// # Note on Version Numbers
+    ///
+    /// When using [`ExpectedVersion::Auto`], versions start at `1`, not `0`.
+    /// The first event appended to a stream will have version `1`.
     pub fn get_by_stream<'txn>(
         &self,
         txn: &'txn heed::RoTxn,
@@ -159,6 +294,41 @@ where
     ///
     /// Events are returned in global sequence order (insertion order).
     /// The iterator starts at sequence 1 (the first event).
+    ///
+    /// # Thread Safety Warning
+    ///
+    /// **The returned iterator is NOT thread-safe.** It holds an internal read transaction
+    /// that must be used on the same thread where it was created. In async code with
+    /// multi-threaded runtimes (like Tokio), you must ensure the iterator is fully consumed
+    /// or dropped before any `.await` point.
+    ///
+    /// See the [`Varve`] documentation for detailed async usage patterns.
+    ///
+    /// # Recommended Async Usage
+    ///
+    /// ```rust,ignore
+    /// // ✅ GOOD: Collect all events before await using spawn_blocking
+    /// let db_clone = db.clone();
+    /// let events: Vec<_> = tokio::task::spawn_blocking(move || {
+    ///     db_clone.iter()?.collect::<Result<Vec<_>, _>>()
+    /// }).await??;
+    ///
+    /// // Now you can use events across await points
+    /// some_async_fn().await;
+    /// for event in events {
+    ///     // process...
+    /// }
+    /// ```
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Synchronous usage (always safe)
+    /// for event in db.iter()? {
+    ///     let event = event?;
+    ///     println!("Event: {:?}", event);
+    /// }
+    /// ```
     pub fn iter(&self) -> crate::error::Result<Iter<'_, E, M>> {
         let txn = self.storage.env.read_txn()?;
         Ok(Iter {
@@ -172,6 +342,23 @@ where
 }
 
 /// An iterator over events in the database.
+///
+/// This iterator yields events in global sequence order (insertion order).
+/// Each call to `next()` returns a `Result` containing an [`EventView`] on success.
+///
+/// # Thread Safety Warning
+///
+/// **This iterator is NOT thread-safe.** It holds an internal LMDB read transaction
+/// (`RoTxn`) that is bound to the thread where it was created. Attempting to use
+/// this iterator from a different thread will cause a `BadRslot` error.
+///
+/// In async code with multi-threaded runtimes:
+/// - Do NOT hold this iterator across `.await` points
+/// - Collect all events before awaiting, or use `spawn_blocking`
+///
+/// See the [`Varve`] documentation for safe async usage patterns.
+///
+/// [`EventView`]: crate::engine::EventView
 pub struct Iter<'a, E, M> {
     txn: heed::RoTxn<'a>,
     reader: crate::engine::Reader<E>,
