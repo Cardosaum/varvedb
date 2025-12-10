@@ -34,6 +34,7 @@ bytemuck = "1.14.3"
 bytes = "1.5.0"
 heed = "0.20.5"
 libc = "0.2.178"
+log = "0.4.29"
 prometheus = "0.14.0"
 rand = "0.8.5"
 rkyv = { version = "0.8", features = ["bytecheck", "little_endian"] }
@@ -41,6 +42,7 @@ serde = { version = "1.0.228", features = ["derive"], optional = true }
 sha2 = "0.10.9"
 thiserror = "1.0.57"
 tokio = { version = "1.36.0", features = ["full"] }
+tracing = { version = "0.1.43", features = ["log", "release_max_level_info"] }
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 zeroize = { version = "1.7", features = ["derive"] }
 
