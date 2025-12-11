@@ -72,7 +72,7 @@ pub mod storage;
 pub mod traits;
 pub mod varve;
 
-pub use varve::{ExpectedVersion, Varve};
+pub use varve::{ExpectedVersion, InvalidVersionError, StreamVersion, Varve};
 
 pub use error::Error;
 pub use model::Payload;

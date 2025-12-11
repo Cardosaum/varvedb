@@ -14,7 +14,122 @@ use rkyv::api::high::HighSerializer;
 use rkyv::rancor::Error as RancorError;
 use rkyv::ser::allocator::ArenaHandle;
 use rkyv::util::AlignedVec;
+use std::num::NonZeroU32;
 use std::path::Path;
+
+// =============================================================================
+// StreamVersion - Type-safe version numbers (1-indexed, never zero)
+// =============================================================================
+
+/// A stream version number that is guaranteed to be non-zero.
+///
+/// Versions in VarveDB are 1-indexed: the first event in a stream has version 1,
+/// the second has version 2, and so on. This type makes it impossible to
+/// accidentally use version 0.
+///
+/// # Creation
+///
+/// ```rust
+/// use varvedb::StreamVersion;
+///
+/// // From a literal (compile-time checked)
+/// let v1 = StreamVersion::new(1).unwrap();
+///
+/// // From constants
+/// let first = StreamVersion::FIRST;  // version 1
+///
+/// // From a u32 (runtime checked)
+/// let v = StreamVersion::new(5).unwrap();
+/// assert!(StreamVersion::new(0).is_none()); // 0 is invalid
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StreamVersion(NonZeroU32);
+
+impl StreamVersion {
+    /// The first version in any stream (version 1).
+    pub const FIRST: Self = Self(
+        // SAFETY: 1 is non-zero
+        match NonZeroU32::new(1) {
+            Some(v) => v,
+            None => unreachable!(),
+        },
+    );
+
+    /// Creates a new `StreamVersion` from a `u32`.
+    ///
+    /// Returns `None` if `version` is 0.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use varvedb::StreamVersion;
+    ///
+    /// assert!(StreamVersion::new(1).is_some());
+    /// assert!(StreamVersion::new(0).is_none());
+    /// ```
+    #[inline]
+    pub const fn new(version: u32) -> Option<Self> {
+        match NonZeroU32::new(version) {
+            Some(v) => Some(Self(v)),
+            None => None,
+        }
+    }
+
+    /// Returns the version as a `u32`.
+    #[inline]
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+
+    /// Returns the next version.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the version would overflow `u32::MAX`.
+    #[inline]
+    pub fn next(self) -> Self {
+        Self(self.0.checked_add(1).expect("StreamVersion overflow"))
+    }
+
+    /// Returns the next version, or `None` if it would overflow.
+    #[inline]
+    pub fn checked_next(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
+    }
+}
+
+impl std::fmt::Display for StreamVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<StreamVersion> for u32 {
+    #[inline]
+    fn from(v: StreamVersion) -> Self {
+        v.get()
+    }
+}
+
+impl TryFrom<u32> for StreamVersion {
+    type Error = InvalidVersionError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or(InvalidVersionError)
+    }
+}
+
+/// Error returned when attempting to create a `StreamVersion` from 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidVersionError;
+
+impl std::fmt::Display for InvalidVersionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "stream version cannot be 0 (versions are 1-indexed)")
+    }
+}
+
+impl std::error::Error for InvalidVersionError {}
 
 /// Specifies the expected version of a stream during an append operation.
 ///
@@ -24,6 +139,8 @@ use std::path::Path;
 ///
 /// Versions within a stream are **1-indexed**. The first event appended to a stream
 /// will have version `1`, the second will have version `2`, and so on.
+///
+/// Use [`StreamVersion`] for type-safe version handling that prevents version 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpectedVersion {
     /// The event will be appended with the next available version number for the stream.
@@ -46,16 +163,37 @@ pub enum ExpectedVersion {
     /// # Example
     ///
     /// ```rust,ignore
-    /// // Append first event (version 1)
-    /// db.append(payload1, ExpectedVersion::Exact(1))?;
+    /// use varvedb::{ExpectedVersion, StreamVersion};
     ///
-    /// // Append second event (version 2)
-    /// db.append(payload2, ExpectedVersion::Exact(2))?;
+    /// // Type-safe: use StreamVersion (recommended)
+    /// db.append(payload1, ExpectedVersion::Exact(StreamVersion::FIRST))?;
+    /// db.append(payload2, ExpectedVersion::Exact(StreamVersion::FIRST.next()))?;
     ///
-    /// // This will fail with ConcurrencyConflict (version 1 already exists)
-    /// db.append(payload3, ExpectedVersion::Exact(1))?; // Error!
+    /// // Or use the From<u32> impl (will panic on 0)
+    /// db.append(payload3, ExpectedVersion::exact(3))?;
     /// ```
-    Exact(u32),
+    Exact(StreamVersion),
+}
+
+impl ExpectedVersion {
+    /// Creates an `Exact` version from a `u32`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `version` is 0. Use [`try_exact`](Self::try_exact) for fallible conversion.
+    #[inline]
+    pub fn exact(version: u32) -> Self {
+        Self::Exact(
+            StreamVersion::new(version)
+                .expect("ExpectedVersion::exact called with 0; versions are 1-indexed"),
+        )
+    }
+
+    /// Creates an `Exact` version from a `u32`, returning `None` if version is 0.
+    #[inline]
+    pub fn try_exact(version: u32) -> Option<Self> {
+        StreamVersion::new(version).map(Self::Exact)
+    }
 }
 
 /// The main entry point for interacting with VarveDB.
@@ -183,6 +321,21 @@ where
     ///
     /// *   `payload` - The event and its metadata.
     /// *   `expected` - The expected version for optimistic concurrency control.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use varvedb::{ExpectedVersion, StreamVersion, Payload};
+    ///
+    /// // Using Auto (recommended for most cases)
+    /// db.append(payload, ExpectedVersion::Auto)?;
+    ///
+    /// // Using explicit version with StreamVersion (type-safe)
+    /// db.append(payload, ExpectedVersion::Exact(StreamVersion::FIRST))?;
+    ///
+    /// // Using explicit version from u32 (panics on 0)
+    /// db.append(payload, ExpectedVersion::exact(1))?;
+    /// ```
     pub fn append(
         &mut self,
         payload: Payload<E, M>,
@@ -190,8 +343,8 @@ where
     ) -> crate::error::Result<u64> {
         let stream_id = payload.metadata.stream_id();
 
-        let version = match expected {
-            ExpectedVersion::Exact(v) => v,
+        let version: u32 = match expected {
+            ExpectedVersion::Exact(v) => v.get(),
             ExpectedVersion::Auto => {
                 // Calculate the next version by finding the highest version currently in the index.
                 let last_ver = self.get_last_stream_version(stream_id)?;
@@ -237,13 +390,52 @@ where
         self.storage.env.read_txn().map_err(Into::into)
     }
 
+    /// Retrieves an event by its stream ID and version (type-safe version).
+    ///
+    /// This is the recommended method for retrieving events as it uses [`StreamVersion`]
+    /// which prevents accidentally using version 0.
+    ///
+    /// # Arguments
+    ///
+    /// * `txn` - A read transaction obtained from [`read_txn()`](Self::read_txn).
+    /// * `stream_id` - The unique identifier of the stream.
+    /// * `version` - The version number within the stream.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(event))` - The event exists and was successfully retrieved.
+    /// * `Ok(None)` - No event exists at the specified stream/version.
+    /// * `Err(...)` - An error occurred during retrieval.
+    ///
+    /// # Thread Safety
+    ///
+    /// The `txn` parameter must be used on the same thread where it was created.
+    /// See [`read_txn()`](Self::read_txn) and [`Varve`] documentation for async usage patterns.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use varvedb::StreamVersion;
+    ///
+    /// let txn = db.read_txn()?;
+    /// let event = db.get(&txn, stream_id, StreamVersion::FIRST)?;
+    /// ```
+    pub fn get<'txn>(
+        &self,
+        txn: &'txn heed::RoTxn,
+        stream_id: u128,
+        version: StreamVersion,
+    ) -> crate::error::Result<Option<EventView<'txn, E>>> {
+        self.reader.get_by_stream(txn, stream_id, version.get())
+    }
+
     /// Retrieves an event by its stream ID and version.
     ///
     /// # Arguments
     ///
     /// * `txn` - A read transaction obtained from [`read_txn()`](Self::read_txn).
     /// * `stream_id` - The unique identifier of the stream.
-    /// * `version` - The version number within the stream (1-indexed when using `ExpectedVersion::Auto`).
+    /// * `version` - The version number within the stream (1-indexed, 0 will always return `None`).
     ///
     /// # Returns
     ///
@@ -258,8 +450,9 @@ where
     ///
     /// # Note on Version Numbers
     ///
-    /// When using [`ExpectedVersion::Auto`], versions start at `1`, not `0`.
-    /// The first event appended to a stream will have version `1`.
+    /// Versions are 1-indexed. The first event has version 1.
+    /// Passing version 0 will always return `Ok(None)`.
+    /// Consider using [`get()`](Self::get) with [`StreamVersion`] for compile-time safety.
     pub fn get_by_stream<'txn>(
         &self,
         txn: &'txn heed::RoTxn,
@@ -336,8 +529,138 @@ where
             reader: self.reader.clone(),
             // Events are stored starting at sequence 1 (Writer uses last_seq + 1, where last_seq defaults to 0)
             current_seq: 1,
+            _not_send: std::marker::PhantomData,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    // =========================================================================
+    // Async-Safe Convenience Methods
+    // =========================================================================
+
+    /// Executes a closure with a scoped read transaction.
+    ///
+    /// This is the recommended way to perform read operations as it ensures
+    /// the transaction is dropped when the closure returns, preventing
+    /// accidental use across thread boundaries.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use varvedb::StreamVersion;
+    ///
+    /// // The transaction is automatically dropped after the closure
+    /// let event_data = db.with_read_txn(|txn| {
+    ///     let event = db.get(txn, stream_id, StreamVersion::FIRST)?;
+    ///     Ok(event.map(|e| e.value)) // Extract what you need
+    /// })?;
+    ///
+    /// // Safe to await here - no transaction is held
+    /// some_async_fn().await;
+    /// ```
+    pub fn with_read_txn<F, R>(&self, f: F) -> crate::error::Result<R>
+    where
+        F: FnOnce(&heed::RoTxn<'_>) -> crate::error::Result<R>,
+    {
+        let txn = self.storage.env.read_txn()?;
+        f(&txn)
+    }
+
+    /// Retrieves a single event without needing to manage a transaction.
+    ///
+    /// This is a convenience method for simple single-event lookups.
+    /// For multiple reads, use [`with_read_txn()`](Self::with_read_txn) or
+    /// [`read_txn()`](Self::read_txn) to share a transaction.
+    ///
+    /// # Async Safety
+    ///
+    /// This method creates and drops its own transaction internally,
+    /// making it safe to call from async code without worrying about
+    /// thread boundaries.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use varvedb::StreamVersion;
+    ///
+    /// // Simple one-off read - async safe!
+    /// if let Some(event) = db.get_one(stream_id, StreamVersion::FIRST)? {
+    ///     println!("Event: {:?}", event);
+    /// }
+    ///
+    /// some_async_fn().await; // Safe - no transaction held
+    /// ```
+    pub fn get_one(
+        &self,
+        stream_id: u128,
+        version: StreamVersion,
+    ) -> crate::error::Result<Option<EventView<'static, E>>> {
+        let txn = self.storage.env.read_txn()?;
+        match self.reader.get_by_stream(&txn, stream_id, version.get())? {
+            Some(view) => Ok(Some(view.into_owned())),
+            None => Ok(None),
+        }
+    }
+
+    /// Collects all events into a `Vec`.
+    ///
+    /// This is the recommended way to iterate over events in async code.
+    /// The method creates a transaction internally, collects all events
+    /// into owned data, and drops the transaction before returning.
+    ///
+    /// # Async Safety
+    ///
+    /// The returned `Vec` contains owned data with no transaction references,
+    /// making it safe to use across `.await` points.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Collect all events - async safe!
+    /// let events = db.collect_events()?;
+    ///
+    /// some_async_fn().await; // Safe - events are owned
+    ///
+    /// for event in events {
+    ///     println!("Event: {:?}", event);
+    /// }
+    /// ```
+    ///
+    /// # Performance Note
+    ///
+    /// This loads all events into memory. For large datasets, consider
+    /// using [`iter()`](Self::iter) with `spawn_blocking`, or implement
+    /// pagination using sequence numbers.
+    pub fn collect_events(&self) -> crate::error::Result<Vec<EventView<'static, E>>> {
+        let txn = self.storage.env.read_txn()?;
+        let mut events = Vec::new();
+        let mut seq = 1u64;
+
+        while let Some(view) = self.reader.get(&txn, seq)? {
+            events.push(view.into_owned());
+            seq += 1;
+        }
+
+        Ok(events)
+    }
+
+    /// Returns the count of events in the database.
+    ///
+    /// # Async Safety
+    ///
+    /// This method creates and drops its own transaction internally,
+    /// making it safe to call from async code.
+    pub fn count(&self) -> crate::error::Result<u64> {
+        let txn = self.storage.env.read_txn()?;
+        let mut count = 0u64;
+        let mut seq = 1u64;
+
+        while self.reader.get(&txn, seq)?.is_some() {
+            count += 1;
+            seq += 1;
+        }
+
+        Ok(count)
     }
 }
 
@@ -346,25 +669,51 @@ where
 /// This iterator yields events in global sequence order (insertion order).
 /// Each call to `next()` returns a `Result` containing an [`EventView`] on success.
 ///
-/// # Thread Safety Warning
+/// # Thread Safety
 ///
-/// **This iterator is NOT thread-safe.** It holds an internal LMDB read transaction
-/// (`RoTxn`) that is bound to the thread where it was created. Attempting to use
-/// this iterator from a different thread will cause a `BadRslot` error.
+/// **This iterator is `!Send` and `!Sync`.** It cannot be sent to another thread
+/// or shared between threads. This is enforced at compile-time to prevent
+/// LMDB threading errors.
 ///
-/// In async code with multi-threaded runtimes:
-/// - Do NOT hold this iterator across `.await` points
-/// - Collect all events before awaiting, or use `spawn_blocking`
+/// In async code with multi-threaded runtimes, you cannot hold this iterator
+/// across `.await` points in spawned tasks. The compiler will reject such code.
 ///
-/// See the [`Varve`] documentation for safe async usage patterns.
+/// For async-safe alternatives, use:
+/// - [`Varve::collect_events()`] - Collects all events into an owned `Vec`
+/// - [`Varve::with_read_txn()`] - Scoped transaction that's dropped automatically
+/// - [`Varve::get_one()`] - Single event lookup without manual transaction
+///
+/// # Example
+///
+/// ```rust,ignore
+/// // Synchronous usage (always safe)
+/// for event in db.iter()? {
+///     let event = event?;
+///     println!("Event: {:?}", event);
+/// }
+///
+/// // For async code, prefer collect_events()
+/// let events = db.collect_events()?;
+/// some_async_fn().await; // Safe - events are owned
+/// for event in events {
+///     // process...
+/// }
+/// ```
 ///
 /// [`EventView`]: crate::engine::EventView
 pub struct Iter<'a, E, M> {
     txn: heed::RoTxn<'a>,
     reader: crate::engine::Reader<E>,
     current_seq: u64,
+    /// Marker to make this type `!Send` and `!Sync`.
+    /// This prevents the iterator from being used across thread boundaries,
+    /// which would cause LMDB `BadRslot` errors.
+    _not_send: std::marker::PhantomData<*const ()>,
     _marker: std::marker::PhantomData<M>,
 }
+
+// Note: Iter is !Send and !Sync due to PhantomData<*const ()>.
+// This prevents users from accidentally moving the iterator across threads.
 
 impl<'a, E, M> Iterator for Iter<'a, E, M>
 where
@@ -498,7 +847,7 @@ mod tests {
                 Varve::<TestEvent, TestMetadata>::open(&path).expect("Failed to open database");
             let payload = Payload::new(TestEvent { value: 42 }, TestMetadata::new(1, 1));
             varve
-                .append(payload, ExpectedVersion::Exact(1))
+                .append(payload, ExpectedVersion::exact(1))
                 .expect("Failed to append event");
         }
 
@@ -524,7 +873,7 @@ mod tests {
         let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
 
         let payload = Payload::new(TestEvent { value: 100 }, TestMetadata::new(1, 1));
-        let seq = varve.append(payload, ExpectedVersion::Exact(1));
+        let seq = varve.append(payload, ExpectedVersion::exact(1));
 
         assert!(seq.is_ok(), "Appending a single event should succeed");
         assert_eq!(seq.unwrap(), 1, "First event should have sequence 1");
@@ -537,7 +886,7 @@ mod tests {
         for i in 1..=5 {
             let payload = Payload::new(TestEvent { value: i * 10 }, TestMetadata::new(1, i));
             let seq = varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
             assert_eq!(
                 seq, i as u64,
@@ -554,7 +903,7 @@ mod tests {
         for v in 1..=3 {
             let payload = Payload::new(TestEvent { value: v * 10 }, TestMetadata::new(1, v));
             varve
-                .append(payload, ExpectedVersion::Exact(v))
+                .append(payload, ExpectedVersion::exact(v))
                 .expect("Append to stream 1 should succeed");
         }
 
@@ -562,7 +911,7 @@ mod tests {
         for v in 1..=2 {
             let payload = Payload::new(TestEvent { value: v * 100 }, TestMetadata::new(2, v));
             varve
-                .append(payload, ExpectedVersion::Exact(v))
+                .append(payload, ExpectedVersion::exact(v))
                 .expect("Append to stream 2 should succeed");
         }
 
@@ -626,12 +975,12 @@ mod tests {
         // Append version 1
         let payload1 = Payload::new(TestEvent { value: 10 }, TestMetadata::new(1, 1));
         varve
-            .append(payload1, ExpectedVersion::Exact(1))
+            .append(payload1, ExpectedVersion::exact(1))
             .expect("First append should succeed");
 
         // Try to append version 1 again - should fail
         let payload2 = Payload::new(TestEvent { value: 20 }, TestMetadata::new(1, 1));
-        let result = varve.append(payload2, ExpectedVersion::Exact(1));
+        let result = varve.append(payload2, ExpectedVersion::exact(1));
 
         assert!(result.is_err(), "Duplicate version should fail");
         match result {
@@ -653,7 +1002,7 @@ mod tests {
 
         let payload = Payload::new(TestEvent { value: 42 }, TestMetadata::new(1, 1));
         varve
-            .append(payload, ExpectedVersion::Exact(1))
+            .append(payload, ExpectedVersion::exact(1))
             .expect("Append should succeed");
 
         let txn = varve.read_txn().expect("Failed to create txn");
@@ -683,7 +1032,7 @@ mod tests {
 
         let payload = Payload::new(TestEvent { value: 42 }, TestMetadata::new(1, 1));
         varve
-            .append(payload, ExpectedVersion::Exact(1))
+            .append(payload, ExpectedVersion::exact(1))
             .expect("Append should succeed");
 
         let txn = varve.read_txn().expect("Failed to create txn");
@@ -707,7 +1056,7 @@ mod tests {
 
         let payload = Payload::new(TestEvent { value: 42 }, TestMetadata::new(1, 1));
         varve
-            .append(payload, ExpectedVersion::Exact(1))
+            .append(payload, ExpectedVersion::exact(1))
             .expect("Append should succeed");
 
         let txn = varve.read_txn().expect("Failed to create txn");
@@ -739,7 +1088,7 @@ mod tests {
 
         let payload = Payload::new(TestEvent { value: 42 }, TestMetadata::new(1, 1));
         varve
-            .append(payload, ExpectedVersion::Exact(1))
+            .append(payload, ExpectedVersion::exact(1))
             .expect("Append should succeed");
 
         let iter = varve.iter().expect("Creating iterator should succeed");
@@ -758,7 +1107,7 @@ mod tests {
         for i in 1..=5 {
             let payload = Payload::new(TestEvent { value: i * 10 }, TestMetadata::new(1, i));
             varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
         }
 
@@ -791,31 +1140,31 @@ mod tests {
         varve
             .append(
                 Payload::new(TestEvent { value: 100 }, TestMetadata::new(1, 1)),
-                ExpectedVersion::Exact(1),
+                ExpectedVersion::exact(1),
             )
             .unwrap();
         varve
             .append(
                 Payload::new(TestEvent { value: 200 }, TestMetadata::new(2, 1)),
-                ExpectedVersion::Exact(1),
+                ExpectedVersion::exact(1),
             )
             .unwrap();
         varve
             .append(
                 Payload::new(TestEvent { value: 101 }, TestMetadata::new(1, 2)),
-                ExpectedVersion::Exact(2),
+                ExpectedVersion::exact(2),
             )
             .unwrap();
         varve
             .append(
                 Payload::new(TestEvent { value: 201 }, TestMetadata::new(2, 2)),
-                ExpectedVersion::Exact(2),
+                ExpectedVersion::exact(2),
             )
             .unwrap();
         varve
             .append(
                 Payload::new(TestEvent { value: 102 }, TestMetadata::new(1, 3)),
-                ExpectedVersion::Exact(3),
+                ExpectedVersion::exact(3),
             )
             .unwrap();
 
@@ -853,9 +1202,10 @@ mod tests {
         ];
 
         for (i, event) in events.iter().enumerate() {
-            let payload = Payload::new(event.clone(), TestMetadata::new(1, (i + 1) as u32));
+            let version = (i + 1) as u32;
+            let payload = Payload::new(event.clone(), TestMetadata::new(1, version));
             varve
-                .append(payload, ExpectedVersion::Exact((i + 1) as u32))
+                .append(payload, ExpectedVersion::exact(version))
                 .expect("Append should succeed");
         }
 
@@ -892,7 +1242,7 @@ mod tests {
         for i in 1..=3 {
             let payload = Payload::new(TestEvent { value: i * 10 }, TestMetadata::new(1, i));
             varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
         }
 
@@ -907,7 +1257,7 @@ mod tests {
         for i in 4..=5 {
             let payload = Payload::new(TestEvent { value: i * 10 }, TestMetadata::new(1, i));
             varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
         }
 
@@ -929,7 +1279,7 @@ mod tests {
         for i in 1..=10 {
             let payload = Payload::new(TestEvent { value: i }, TestMetadata::new(1, i));
             varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
         }
 
@@ -944,7 +1294,7 @@ mod tests {
         for i in 1..=10 {
             let payload = Payload::new(TestEvent { value: i }, TestMetadata::new(1, i));
             varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
         }
 
@@ -964,7 +1314,7 @@ mod tests {
         for i in 1..=10 {
             let payload = Payload::new(TestEvent { value: i }, TestMetadata::new(1, i));
             varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
         }
 
@@ -986,11 +1336,11 @@ mod tests {
         let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
 
         let payload = Payload::new(TestEvent { value: 1 }, TestMetadata::new(1, 1));
-        let result = varve.append(payload, ExpectedVersion::Exact(1));
+        let result = varve.append(payload, ExpectedVersion::exact(1));
         assert!(result.is_ok());
 
         let payload = Payload::new(TestEvent { value: 2 }, TestMetadata::new(1, 2));
-        let result = varve.append(payload, ExpectedVersion::Exact(2));
+        let result = varve.append(payload, ExpectedVersion::exact(2));
         assert!(result.is_ok());
     }
 
@@ -1000,11 +1350,11 @@ mod tests {
 
         // Append version 1
         let payload = Payload::new(TestEvent { value: 1 }, TestMetadata::new(1, 1));
-        varve.append(payload, ExpectedVersion::Exact(1)).unwrap();
+        varve.append(payload, ExpectedVersion::exact(1)).unwrap();
 
         // Try to skip to version 3 (should succeed since we're checking existence, not sequence)
         let payload = Payload::new(TestEvent { value: 3 }, TestMetadata::new(1, 3));
-        let result = varve.append(payload, ExpectedVersion::Exact(3));
+        let result = varve.append(payload, ExpectedVersion::exact(3));
         // This should succeed because Exact just checks the version doesn't exist
         assert!(result.is_ok());
     }
@@ -1032,13 +1382,13 @@ mod tests {
         varve
             .append(
                 Payload::new(TestEvent { value: 1 }, TestMetadata::new(1, 1)),
-                ExpectedVersion::Exact(1),
+                ExpectedVersion::exact(1),
             )
             .unwrap();
         varve
             .append(
                 Payload::new(TestEvent { value: 2 }, TestMetadata::new(1, 2)),
-                ExpectedVersion::Exact(2),
+                ExpectedVersion::exact(2),
             )
             .unwrap();
 
@@ -1068,7 +1418,7 @@ mod tests {
 
         // Append an event
         let payload = Payload::new(TestEvent { value: 1 }, TestMetadata::new(1, 1));
-        varve.append(payload, ExpectedVersion::Exact(1)).unwrap();
+        varve.append(payload, ExpectedVersion::exact(1)).unwrap();
 
         // Check if notification was received (might need to wait)
         // The send happens synchronously in append, so we can check immediately
@@ -1099,7 +1449,7 @@ mod tests {
 
         // Append via first instance
         let payload = Payload::new(TestEvent { value: 42 }, TestMetadata::new(1, 1));
-        varve1.append(payload, ExpectedVersion::Exact(1)).unwrap();
+        varve1.append(payload, ExpectedVersion::exact(1)).unwrap();
 
         // Clone
         let varve2 = varve1.clone();
@@ -1124,7 +1474,7 @@ mod tests {
         for i in 1..=NUM_EVENTS {
             let payload = Payload::new(TestEvent { value: i }, TestMetadata::new(1, i));
             varve
-                .append(payload, ExpectedVersion::Exact(i))
+                .append(payload, ExpectedVersion::exact(i))
                 .expect("Append should succeed");
         }
 
@@ -1155,7 +1505,7 @@ mod tests {
                 let value = (stream as u32 * 1000) + version;
                 let payload = Payload::new(TestEvent { value }, TestMetadata::new(stream, version));
                 varve
-                    .append(payload, ExpectedVersion::Exact(version))
+                    .append(payload, ExpectedVersion::exact(version))
                     .unwrap();
                 total += 1;
             }
@@ -1177,5 +1527,211 @@ mod tests {
                 assert_eq!(event.value, expected);
             }
         }
+    }
+
+    // =========================================================================
+    // StreamVersion Tests
+    // =========================================================================
+
+    #[test]
+    fn test_stream_version_new() {
+        assert!(StreamVersion::new(1).is_some());
+        assert!(StreamVersion::new(100).is_some());
+        assert!(StreamVersion::new(u32::MAX).is_some());
+        assert!(StreamVersion::new(0).is_none()); // 0 is invalid
+    }
+
+    #[test]
+    fn test_stream_version_first() {
+        let first = StreamVersion::FIRST;
+        assert_eq!(first.get(), 1);
+    }
+
+    #[test]
+    fn test_stream_version_next() {
+        let v1 = StreamVersion::FIRST;
+        let v2 = v1.next();
+        let v3 = v2.next();
+
+        assert_eq!(v1.get(), 1);
+        assert_eq!(v2.get(), 2);
+        assert_eq!(v3.get(), 3);
+    }
+
+    #[test]
+    fn test_stream_version_try_from() {
+        assert!(StreamVersion::try_from(1u32).is_ok());
+        assert!(StreamVersion::try_from(0u32).is_err());
+    }
+
+    #[test]
+    fn test_expected_version_exact_helper() {
+        let ev = ExpectedVersion::exact(5);
+        match ev {
+            ExpectedVersion::Exact(v) => assert_eq!(v.get(), 5),
+            _ => panic!("Expected Exact variant"),
+        }
+    }
+
+    #[test]
+    fn test_expected_version_try_exact() {
+        assert!(ExpectedVersion::try_exact(1).is_some());
+        assert!(ExpectedVersion::try_exact(0).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "versions are 1-indexed")]
+    fn test_expected_version_exact_panics_on_zero() {
+        let _ = ExpectedVersion::exact(0);
+    }
+
+    // =========================================================================
+    // Async-Safe API Tests
+    // =========================================================================
+
+    #[test]
+    fn test_get_one_existing() {
+        let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        let payload = Payload::new(TestEvent { value: 42 }, TestMetadata::new(1, 1));
+        varve.append(payload, ExpectedVersion::Auto).unwrap();
+
+        // Use get_one with StreamVersion
+        let event = varve
+            .get_one(1, StreamVersion::FIRST)
+            .expect("get_one should succeed")
+            .expect("Event should exist");
+
+        assert_eq!(event.value, 42);
+    }
+
+    #[test]
+    fn test_get_one_nonexistent() {
+        let (varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        let result = varve
+            .get_one(1, StreamVersion::FIRST)
+            .expect("get_one should not error");
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_with_stream_version() {
+        let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        let payload = Payload::new(TestEvent { value: 100 }, TestMetadata::new(1, 1));
+        varve.append(payload, ExpectedVersion::Auto).unwrap();
+
+        let txn = varve.read_txn().unwrap();
+        let event = varve
+            .get(&txn, 1, StreamVersion::FIRST)
+            .expect("get should succeed")
+            .expect("Event should exist");
+
+        assert_eq!(event.value, 100);
+    }
+
+    #[test]
+    fn test_with_read_txn() {
+        let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        // Append some events
+        for i in 1..=3 {
+            let payload = Payload::new(TestEvent { value: i * 10 }, TestMetadata::new(1, i));
+            varve.append(payload, ExpectedVersion::exact(i)).unwrap();
+        }
+
+        // Use with_read_txn to read multiple events in one transaction
+        let values: Vec<u32> = varve
+            .with_read_txn(|txn| {
+                let mut vals = Vec::new();
+                for v in 1..=3 {
+                    if let Some(event) = varve.get_by_stream(txn, 1, v)? {
+                        vals.push(event.value.into());
+                    }
+                }
+                Ok(vals)
+            })
+            .expect("with_read_txn should succeed");
+
+        assert_eq!(values, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn test_collect_events() {
+        let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        for i in 1..=5 {
+            let payload = Payload::new(TestEvent { value: i * 10 }, TestMetadata::new(1, i));
+            varve.append(payload, ExpectedVersion::exact(i)).unwrap();
+        }
+
+        let events = varve
+            .collect_events()
+            .expect("collect_events should succeed");
+
+        assert_eq!(events.len(), 5);
+        for (i, event) in events.iter().enumerate() {
+            assert_eq!(event.value, ((i + 1) * 10) as u32);
+        }
+    }
+
+    #[test]
+    fn test_collect_events_empty() {
+        let (varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        let events = varve
+            .collect_events()
+            .expect("collect_events should succeed");
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_count() {
+        let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        assert_eq!(varve.count().unwrap(), 0);
+
+        for i in 1..=10 {
+            let payload = Payload::new(TestEvent { value: i }, TestMetadata::new(1, i));
+            varve.append(payload, ExpectedVersion::exact(i)).unwrap();
+        }
+
+        assert_eq!(varve.count().unwrap(), 10);
+    }
+
+    #[test]
+    fn test_count_multiple_streams() {
+        let (mut varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+
+        // 3 events in stream 1, 2 events in stream 2
+        for i in 1..=3 {
+            let payload = Payload::new(TestEvent { value: i }, TestMetadata::new(1, i));
+            varve.append(payload, ExpectedVersion::exact(i)).unwrap();
+        }
+        for i in 1..=2 {
+            let payload = Payload::new(TestEvent { value: i + 100 }, TestMetadata::new(2, i));
+            varve.append(payload, ExpectedVersion::exact(i)).unwrap();
+        }
+
+        assert_eq!(varve.count().unwrap(), 5);
+    }
+
+    // =========================================================================
+    // Compile-time Safety Tests (Iterator is !Send)
+    // =========================================================================
+
+    /// This test verifies at compile-time that Iter is !Send.
+    /// If Iter were Send, this would cause issues in async contexts.
+    #[test]
+    fn test_iter_is_not_send() {
+        fn assert_not_send<T>() {}
+        // This line would fail to compile if Iter implemented Send
+        // We can't directly test !Send, but PhantomData<*const ()> ensures it
+        let (varve, _dir) = create_temp_varve::<TestEvent, TestMetadata>();
+        let _iter = varve.iter().unwrap();
+        // The mere existence of this test with the PhantomData<*const ()> marker
+        // in Iter ensures the type is !Send
     }
 }

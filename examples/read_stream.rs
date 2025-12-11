@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 version: 1,
             },
         ),
-        ExpectedVersion::Exact(1),
+        ExpectedVersion::exact(1),
     )?;
 
     db.append(
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 version: 2,
             },
         ),
-        ExpectedVersion::Exact(2),
+        ExpectedVersion::exact(2),
     )?;
 
     // Append events to Stream 2
@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 version: 1,
             },
         ),
-        ExpectedVersion::Exact(1),
+        ExpectedVersion::exact(1),
     )?;
 
     println!("Appended events.");

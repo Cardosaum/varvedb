@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             version: 1,
         };
 
-        db.append(Payload::new(event, metadata), ExpectedVersion::Exact(1))?;
+        db.append(Payload::new(event, metadata), ExpectedVersion::exact(1))?;
 
         // 3. Read it back transparently
         println!("Reading secret event...");
