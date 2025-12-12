@@ -32,12 +32,14 @@ pub enum Error {
 #[derive(Debug, Clone)]
 pub struct WriterConfig {
     pub max_dbs: u32,
+    pub map_size: usize,
 }
 
 impl Default for WriterConfig {
     fn default() -> Self {
         Self {
             max_dbs: DEFAULT_MAX_DBS,
+            map_size: DEFAULT_MAP_SIZE,
         }
     }
 }
@@ -66,7 +68,7 @@ impl<const N: usize> Writer<N> {
             EnvOpenOptions::new()
                 .read_txn_with_tls()
                 .max_dbs(config.max_dbs)
-                .map_size(DEFAULT_MAP_SIZE)
+                .map_size(config.map_size)
                 .open_encrypted::<E, _>(key, path)?
         };
 
