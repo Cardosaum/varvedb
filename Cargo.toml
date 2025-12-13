@@ -32,6 +32,7 @@ default = []
 argon2 = "0.5.3"
 chacha20poly1305 = { version = "0.10.1", features = ["heapless"] }
 heed3 = "0.22.0"
+ouroboros = "0.18.5"
 rkyv = "0.8.12"
 thiserror = "2.0.17"
 # aes-gcm = "0.10.3"
