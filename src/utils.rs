@@ -71,17 +71,20 @@ macro_rules! timed {
     };
 }
 
-/// Times the execution of a block and prints the result to stderr.
+/// Times the execution of a block and logs the result.
 ///
-/// This is a convenience wrapper around [`timed!`] that prints timing information
-/// in the format: `[varve] {label}: {duration:?}`
-///
+/// In **debug builds**, times the block and logs via the selected backend.
 /// In **release builds**, this macro is a no-op — only the block executes.
 ///
-/// # Arguments
+/// # Output Backend (priority order)
 ///
-/// * `$label` - A displayable label for the operation
-/// * `$block` - The code block to time
+/// - `debug_eprintln`: `eprintln!`
+/// - `log_trace`: `tracing::trace!`
+/// - `log_debug`: `tracing::debug!`
+/// - `log_info`: `tracing::info!`
+/// - `log_warn`: `tracing::warn!`
+/// - `log_error`: `tracing::error!`
+/// - (none): silent, just executes the block
 ///
 /// # Examples
 ///
@@ -96,10 +99,10 @@ macro_rules! timed {
 #[cfg(debug_assertions)]
 macro_rules! timed_dbg {
     ($label:expr, $block:expr) => {{
-        let __timed_start = ::std::time::Instant::now();
-        let __timed_result = $block;
-        ::tracing::trace!("[varve] {}: {:?}", $label, __timed_start.elapsed());
-        __timed_result
+        let __start = ::std::time::Instant::now();
+        let __result = $block;
+        $crate::__varve_log_timing!($label, __start.elapsed());
+        __result
     }};
 }
 
@@ -108,6 +111,77 @@ macro_rules! timed_dbg {
 macro_rules! timed_dbg {
     ($label:expr, $block:expr) => {
         $block
+    };
+}
+
+/// Internal helper macro for timing output dispatch.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __varve_log_timing {
+    ($label:expr, $elapsed:expr) => {
+        #[cfg(feature = "debug_eprintln")]
+        {
+            eprintln!("[varve] {}: {:?}", $label, $elapsed);
+        }
+
+        #[cfg(all(not(feature = "debug_eprintln"), feature = "log_trace"))]
+        {
+            ::tracing::trace!("[varve] {}: {:?}", $label, $elapsed);
+        }
+
+        #[cfg(all(
+            not(feature = "debug_eprintln"),
+            not(feature = "log_trace"),
+            feature = "log_debug"
+        ))]
+        {
+            ::tracing::debug!("[varve] {}: {:?}", $label, $elapsed);
+        }
+
+        #[cfg(all(
+            not(feature = "debug_eprintln"),
+            not(feature = "log_trace"),
+            not(feature = "log_debug"),
+            feature = "log_info"
+        ))]
+        {
+            ::tracing::info!("[varve] {}: {:?}", $label, $elapsed);
+        }
+
+        #[cfg(all(
+            not(feature = "debug_eprintln"),
+            not(feature = "log_trace"),
+            not(feature = "log_debug"),
+            not(feature = "log_info"),
+            feature = "log_warn"
+        ))]
+        {
+            ::tracing::warn!("[varve] {}: {:?}", $label, $elapsed);
+        }
+
+        #[cfg(all(
+            not(feature = "debug_eprintln"),
+            not(feature = "log_trace"),
+            not(feature = "log_debug"),
+            not(feature = "log_info"),
+            not(feature = "log_warn"),
+            feature = "log_error"
+        ))]
+        {
+            ::tracing::error!("[varve] {}: {:?}", $label, $elapsed);
+        }
+
+        #[cfg(not(any(
+            feature = "debug_eprintln",
+            feature = "log_trace",
+            feature = "log_debug",
+            feature = "log_info",
+            feature = "log_warn",
+            feature = "log_error"
+        )))]
+        {
+            let _ = ($label, $elapsed);
+        }
     };
 }
 

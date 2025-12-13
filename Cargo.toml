@@ -26,6 +26,13 @@ exclude = [
 
 [features]
 default = []
+log = ["tracing", "tracing-subscriber"]
+log_trace = ["log"]
+log_debug = ["log"]
+log_info = ["log"]
+log_warn = ["log"]
+log_error = ["log"]
+debug_eprintln = []
 # serde = ["dep:serde", "zeroize/serde"]
 
 [dependencies]
@@ -33,7 +40,13 @@ heed = "0.22.0"
 ouroboros = "0.18.5"
 rkyv = "0.8.12"
 thiserror = "2.0.17"
-tracing = { version = "0.1", features = ["log", "release_max_level_info"] }
+tracing = { version = "0.1", features = [
+    "log",
+    "release_max_level_info",
+], optional = true }
+tracing-subscriber = { version = "0.3.22", features = [
+    "env-filter",
+], optional = true }
 
 # aes-gcm = "0.10.3"
 # bytemuck = "1.14.3"
@@ -55,6 +68,7 @@ tempfile = "3.10.0"
 criterion = "0.5.1"
 proptest = "1.4.0"
 bytecheck = "0.8.2"
+rstest = "0.26.1"
 
 # [[bench]]
 # name = "write_bench"

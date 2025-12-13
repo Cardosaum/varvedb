@@ -11,5 +11,6 @@ pub mod types;
 #[macro_use]
 pub mod utils;
 pub mod varve;
+pub mod log;
 
 pub use varve::{Varve, VarveReader};

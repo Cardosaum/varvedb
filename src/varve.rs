@@ -909,57 +909,59 @@ mod tests {
         let start = Instant::now();
         let timeout = Duration::from_secs(5);
 
-        thread::scope(|s| {
-            let written = &written;
+        timed_dbg!("append_batch", {
+            thread::scope(|s| {
+                let written = &written;
 
-            s.spawn(move || {
-                let events = (0..TOTAL)
-                    .map(|i| SimpleEvent {
-                        id: i,
-                        timestamp: 1000 + i,
-                        value: (i as i32) * 2,
-                    })
-                    .collect::<Vec<_>>();
-                store
-                    .append_batch(&events)
-                    .inspect_err(|e| eprintln!("Error appending event: {e:?}"))
-                    .expect("append failed");
-                written.store(TOTAL, Ordering::Release);
-            });
+                s.spawn(move || {
+                    let events = (0..TOTAL)
+                        .map(|i| SimpleEvent {
+                            id: i,
+                            timestamp: 1000 + i,
+                            value: (i as i32) * 2,
+                        })
+                        .collect::<Vec<_>>();
+                    store
+                        .append_batch(&events)
+                        .inspect_err(|e| eprintln!("Error appending event: {e:?}"))
+                        .expect("append failed");
+                    written.store(TOTAL, Ordering::Release);
+                });
 
-            let reader_task = |mut reader: VarveReader| {
-                let mut next = 0u64;
-                while next < TOTAL && start.elapsed() < timeout {
-                    let max_written = written.load(Ordering::Acquire);
-                    while next < max_written {
-                        let bytes = reader
-                            .get_bytes(next)
-                            .inspect_err(|e| eprintln!("Error getting bytes: {e:?}"))
-                            .expect("get_bytes failed")
-                            .or_else(|| {
-                                eprintln!("Missing data for sequence {next}");
-                                None
-                            })
-                            .expect("missing data");
-                        let archived =
-                            rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes)
-                                .inspect_err(|e| eprintln!("Error accessing archived: {e:?}"))
-                                .expect("access failed");
-                        assert_eq!(archived.id, next);
-                        assert_eq!(archived.value, (next as i32) * 2);
-                        next += 1;
+                let reader_task = |mut reader: VarveReader| {
+                    let mut next = 0u64;
+                    while next < TOTAL && start.elapsed() < timeout {
+                        let max_written = written.load(Ordering::Acquire);
+                        while next < max_written {
+                            let bytes = reader
+                                .get_bytes(next)
+                                .inspect_err(|e| eprintln!("Error getting bytes: {e:?}"))
+                                .expect("get_bytes failed")
+                                .or_else(|| {
+                                    eprintln!("Missing data for sequence {next}");
+                                    None
+                                })
+                                .expect("missing data");
+                            let archived = rkyv::access::<
+                                rkyv::Archived<SimpleEvent>,
+                                rkyv::rancor::Error,
+                            >(bytes)
+                            .inspect_err(|e| eprintln!("Error accessing archived: {e:?}"))
+                            .expect("access failed");
+                            assert_eq!(archived.id, next);
+                            assert_eq!(archived.value, (next as i32) * 2);
+                            next += 1;
+                        }
+                        thread::yield_now();
                     }
-                    thread::yield_now();
-                }
-                assert_eq!(next, TOTAL, "reader did not observe all events in time");
-            };
+                    assert_eq!(next, TOTAL, "reader did not observe all events in time");
+                };
 
-            s.spawn(move || reader_task(r1));
-            s.spawn(move || reader_task(r2));
-            s.spawn(move || reader_task(r3));
+                s.spawn(move || reader_task(r1));
+                s.spawn(move || reader_task(r2));
+                s.spawn(move || reader_task(r3));
+            });
         });
-
-        println!("time taken: {:?}", start.elapsed());
     }
 
     #[test]
