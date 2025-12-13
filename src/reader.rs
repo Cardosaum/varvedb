@@ -704,8 +704,7 @@ mod tests {
                         rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes);
                     // With wrong key, the data should be corrupted
                     assert!(
-                        access_result.is_err()
-                            || access_result.map(|a| a.id != 1).unwrap_or(true)
+                        access_result.is_err() || access_result.map(|a| a.id != 1).unwrap_or(true)
                     );
                 }
             }
