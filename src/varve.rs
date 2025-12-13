@@ -9,13 +9,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use chacha20poly1305::aead::{AeadMutInPlace, Key};
-use chacha20poly1305::KeyInit;
 use heed::{Env, EnvOpenOptions, Error as HeedError, PutFlags, RoTxn, WithTls};
 use rkyv::rancor::Strategy;
 use rkyv::ser::allocator::Arena;
 
-use crate::{constants, types::EventsDb};
+use crate::{constants, timed_dbg, types::EventsDb};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -119,6 +117,90 @@ impl<const N: usize> Varve<N> {
         }
     }
 
+    // =========================================================================
+    // Private serialization helpers
+    // =========================================================================
+
+    /// Serialize an event using the non-allocating (low) serializer.
+    fn serialize_low<T>(&mut self, event: &T) -> Result<Vec<u8>, Error>
+    where
+        T: for<'a> rkyv::Serialize<LowSerializer<'a>>,
+    {
+        let writer = rkyv::ser::writer::Buffer::from(&mut self.serializer_buffer);
+        let mut serializer = rkyv::ser::Serializer::new(writer, (), ());
+        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)
+            .map_err(|e| Error::Serialization(format!("{e:?}")))?;
+        let pos = serializer.into_writer().len();
+        Ok(self.serializer_buffer[..pos].to_vec())
+    }
+
+    /// Serialize an event using the allocating (high) serializer.
+    fn serialize_high<T>(&mut self, event: &T) -> Result<Vec<u8>, Error>
+    where
+        T: for<'a> rkyv::Serialize<HighSerializer<'a>>,
+    {
+        let mut arena = Arena::new();
+        let writer = rkyv::ser::writer::Buffer::from(&mut self.serializer_buffer);
+        let sharing = rkyv::ser::sharing::Share::new();
+        let mut serializer = rkyv::ser::Serializer::new(writer, arena.acquire(), sharing);
+        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)
+            .map_err(|e| Error::Serialization(format!("{e:?}")))?;
+        let pos = serializer.into_writer().len();
+        Ok(self.serializer_buffer[..pos].to_vec())
+    }
+
+    // =========================================================================
+    // Private storage helpers
+    // =========================================================================
+
+    /// Store a single serialized event and commit immediately.
+    fn store_single(&mut self, bytes: &[u8]) -> Result<u64, Error> {
+        let seq = self.next_sequence;
+        let mut wtxn = self.core.env.write_txn()?;
+
+        timed_dbg!("put", {
+            self.core
+                .events_db
+                .put_with_flags(&mut wtxn, PutFlags::NO_OVERWRITE, &seq, bytes)
+        })?;
+
+        timed_dbg!("commit", wtxn.commit())?;
+
+        self.next_sequence = seq + 1;
+        Ok(seq)
+    }
+
+    /// Store multiple serialized events in a single transaction.
+    fn store_batch(&mut self, serialized_events: Vec<Vec<u8>>) -> Result<Vec<u64>, Error> {
+        let count = serialized_events.len();
+        let mut sequences = Vec::with_capacity(count);
+
+        let mut wtxn = self.core.env.write_txn()?;
+
+        timed_dbg!(format!("batch_put({count})"), {
+            for bytes in serialized_events {
+                let seq = self.next_sequence;
+                self.core.events_db.put_with_flags(
+                    &mut wtxn,
+                    PutFlags::NO_OVERWRITE,
+                    &seq,
+                    &bytes,
+                )?;
+                sequences.push(seq);
+                self.next_sequence = seq + 1;
+            }
+            Ok::<_, Error>(())
+        })?;
+
+        timed_dbg!("batch_commit", wtxn.commit())?;
+
+        Ok(sequences)
+    }
+
+    // =========================================================================
+    // Public append API
+    // =========================================================================
+
     /// Append an event using a non-allocating serializer (best for POD / fixed-size types).
     ///
     /// Returns the assigned sequence number.
@@ -126,27 +208,8 @@ impl<const N: usize> Varve<N> {
     where
         T: for<'a> rkyv::Serialize<LowSerializer<'a>>,
     {
-        let writer = rkyv::ser::writer::Buffer::from(&mut self.serializer_buffer);
-        let mut serializer = rkyv::ser::Serializer::new(writer, (), ());
-
-        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)
-            .map_err(|e| Error::Serialization(format!("{:?}", e)))?;
-
-        let pos = serializer.into_writer().len();
-        let serialized_bytes = &self.serializer_buffer[..pos];
-        println!("serialized_bytes: {serialized_bytes:?}");
-
-        let seq = self.next_sequence;
-        let mut wtxn = self.core.env.write_txn()?;
-        self.core.events_db.put_with_flags(
-            &mut wtxn,
-            PutFlags::NO_OVERWRITE,
-            &seq,
-            serialized_bytes,
-        )?;
-        wtxn.commit()?;
-        self.next_sequence = seq + 1;
-        Ok(seq)
+        let bytes = timed_dbg!("serialize", self.serialize_low(event))?;
+        self.store_single(&bytes)
     }
 
     /// Append an event using an allocating serializer (supports Strings, Vecs, etc).
@@ -156,29 +219,69 @@ impl<const N: usize> Varve<N> {
     where
         T: for<'a> rkyv::Serialize<HighSerializer<'a>>,
     {
-        let mut arena = Arena::new();
+        let bytes = timed_dbg!("serialize", self.serialize_high(event))?;
+        self.store_single(&bytes)
+    }
 
-        let writer = rkyv::ser::writer::Buffer::from(&mut self.serializer_buffer);
-        let sharing = rkyv::ser::sharing::Share::new();
-        let mut serializer = rkyv::ser::Serializer::new(writer, arena.acquire(), sharing);
+    /// Append a batch of events using a non-allocating serializer in a single transaction.
+    ///
+    /// This is more efficient than calling [`append`](Self::append) multiple times, as it reduces
+    /// transaction overhead by batching all writes into a single commit.
+    ///
+    /// Returns the sequence numbers assigned to each event, in order.
+    pub fn append_batch<T>(&mut self, events: &[T]) -> Result<Vec<u64>, Error>
+    where
+        T: for<'a> rkyv::Serialize<LowSerializer<'a>>,
+    {
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)
-            .map_err(|e| Error::Serialization(format!("{:?}", e)))?;
+        let event_count = events.len();
 
-        let pos = serializer.into_writer().len();
-        let serialized_bytes = &self.serializer_buffer[..pos];
+        let serialized = timed_dbg!(format!("batch_serialize({event_count})"), {
+            let mut serialized = Vec::with_capacity(event_count);
+            for event in events {
+                serialized.push(self.serialize_low(event)?);
+            }
+            Ok::<_, Error>(serialized)
+        })?;
 
-        let seq = self.next_sequence;
-        let mut wtxn = self.core.env.write_txn()?;
-        self.core.events_db.put_with_flags(
-            &mut wtxn,
-            PutFlags::NO_OVERWRITE,
-            &seq,
-            serialized_bytes,
-        )?;
-        wtxn.commit()?;
-        self.next_sequence = seq + 1;
-        Ok(seq)
+        timed_dbg!(
+            format!("batch_total({event_count})"),
+            self.store_batch(serialized)
+        )
+    }
+
+    /// Append a batch of events using an allocating serializer in a single transaction.
+    ///
+    /// This is more efficient than calling [`append_alloc`](Self::append_alloc) multiple times,
+    /// as it reduces transaction overhead by batching all writes into a single commit.
+    /// Supports Strings, Vecs, etc.
+    ///
+    /// Returns the sequence numbers assigned to each event, in order.
+    pub fn append_batch_alloc<T>(&mut self, events: &[T]) -> Result<Vec<u64>, Error>
+    where
+        T: for<'a> rkyv::Serialize<HighSerializer<'a>>,
+    {
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let event_count = events.len();
+
+        let serialized = timed_dbg!(format!("batch_serialize({event_count})"), {
+            let mut serialized = Vec::with_capacity(event_count);
+            for event in events {
+                serialized.push(self.serialize_high(event)?);
+            }
+            Ok::<_, Error>(serialized)
+        })?;
+
+        timed_dbg!(
+            format!("batch_total({event_count})"),
+            self.store_batch(serialized)
+        )
     }
 
     /// Read an event by sequence using the writer-thread handle (zero-copy bytes).
@@ -296,7 +399,6 @@ impl Clone for VarveReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chacha20poly1305::{aead::OsRng, ChaCha20Poly1305};
     use rkyv::{Archive, Deserialize, Serialize};
     use tempfile::tempdir;
 
@@ -514,10 +616,6 @@ mod tests {
         pub value: i32,
     }
 
-    fn generate_key() -> Key<ChaCha20Poly1305> {
-        ChaCha20Poly1305::generate_key(&mut OsRng)
-    }
-
     // Helper: stable archived access via VarveReader scratch buffer
     fn get_archived_simple(
         reader: &mut VarveReader,
@@ -547,8 +645,6 @@ mod tests {
     #[test]
     fn test_append_and_read_simple_event() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
-
         let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
 
         let event = SimpleEvent {
@@ -570,8 +666,6 @@ mod tests {
     #[test]
     fn test_append_and_read_multiple_simple_events() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
-
         let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
 
         for i in 0..100u64 {
@@ -819,18 +913,18 @@ mod tests {
             let written = &written;
 
             s.spawn(move || {
-                for i in 0..TOTAL {
-                    let event = SimpleEvent {
+                let events = (0..TOTAL)
+                    .map(|i| SimpleEvent {
                         id: i,
                         timestamp: 1000 + i,
                         value: (i as i32) * 2,
-                    };
-                    store
-                        .append(&event)
-                        .inspect_err(|e| eprintln!("Error appending event: {e:?}"))
-                        .expect("append failed");
-                    written.store(i + 1, Ordering::Release);
-                }
+                    })
+                    .collect::<Vec<_>>();
+                store
+                    .append_batch(&events)
+                    .inspect_err(|e| eprintln!("Error appending event: {e:?}"))
+                    .expect("append failed");
+                written.store(TOTAL, Ordering::Release);
             });
 
             let reader_task = |mut reader: VarveReader| {
@@ -864,5 +958,166 @@ mod tests {
             s.spawn(move || reader_task(r2));
             s.spawn(move || reader_task(r3));
         });
+
+        println!("time taken: {:?}", start.elapsed());
+    }
+
+    #[test]
+    fn test_append_batch_simple_events() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
+
+        let events = vec![
+            SimpleEvent {
+                id: 0,
+                timestamp: 1702400000,
+                value: 10,
+            },
+            SimpleEvent {
+                id: 1,
+                timestamp: 1702400001,
+                value: 20,
+            },
+            SimpleEvent {
+                id: 2,
+                timestamp: 1702400002,
+                value: 30,
+            },
+        ];
+
+        let sequences = store.append_batch(&events).expect("append_batch failed");
+        assert_eq!(sequences, vec![0, 1, 2]);
+
+        let mut reader = store.reader();
+        for (i, seq) in sequences.iter().enumerate() {
+            let archived = get_archived_simple(&mut reader, *seq);
+            assert_eq!(archived.id, i as u64);
+            assert_eq!(archived.value, (i as i32 + 1) * 10);
+        }
+    }
+
+    #[test]
+    fn test_append_batch_alloc_events() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let mut store = Varve::<4096>::new(dir.path()).expect("Failed to create Varve");
+
+        let events = vec![
+            DomainEvent::Payment(events::payment::Payment::Created(
+                events::payment::created::Created::V1(events::payment::created::V1 {
+                    payment_id: "pay_001".to_string(),
+                    amount: 1000,
+                    currency: "USD".to_string(),
+                    customer_id: "cust_001".to_string(),
+                }),
+            )),
+            DomainEvent::Payment(events::payment::Payment::Created(
+                events::payment::created::Created::V1(events::payment::created::V1 {
+                    payment_id: "pay_002".to_string(),
+                    amount: 2000,
+                    currency: "EUR".to_string(),
+                    customer_id: "cust_002".to_string(),
+                }),
+            )),
+            DomainEvent::Payment(events::payment::Payment::Created(
+                events::payment::created::Created::V1(events::payment::created::V1 {
+                    payment_id: "pay_003".to_string(),
+                    amount: 3000,
+                    currency: "GBP".to_string(),
+                    customer_id: "cust_003".to_string(),
+                }),
+            )),
+        ];
+
+        let sequences = store
+            .append_batch_alloc(&events)
+            .expect("append_batch_alloc failed");
+        assert_eq!(sequences, vec![0, 1, 2]);
+
+        let mut reader = store.reader();
+        let ids = vec!["pay_001", "pay_002", "pay_003"];
+        let amounts = vec![1000, 2000, 3000];
+        let currencies = vec!["USD", "EUR", "GBP"];
+        let customers = vec!["cust_001", "cust_002", "cust_003"];
+
+        for (i, seq) in sequences.iter().enumerate() {
+            let archived = get_archived_domain(&mut reader, *seq);
+            match archived {
+                ArchivedDomainEvent::Payment(payment) => match payment {
+                    events::payment::ArchivedPayment::Created(created) => match created {
+                        events::payment::created::ArchivedCreated::V1(v1) => {
+                            assert_eq!(v1.payment_id.as_str(), ids[i]);
+                            assert_eq!(v1.amount, amounts[i]);
+                            assert_eq!(v1.currency.as_str(), currencies[i]);
+                            assert_eq!(v1.customer_id.as_str(), customers[i]);
+                        }
+                    },
+                    _ => panic!("Expected Created payment"),
+                },
+                _ => panic!("Expected Payment event"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_append_batch_empty_slice() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
+
+        let events: Vec<SimpleEvent> = vec![];
+        let sequences = store.append_batch(&events).expect("append_batch failed");
+        assert_eq!(sequences, vec![] as Vec<u64>);
+    }
+
+    #[test]
+    fn test_append_batch_alloc_empty_slice() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
+
+        let events: Vec<DomainEvent> = vec![];
+        let sequences = store
+            .append_batch_alloc(&events)
+            .expect("append_batch_alloc failed");
+        assert_eq!(sequences, vec![] as Vec<u64>);
+    }
+
+    #[test]
+    fn test_append_batch_sequence_continuation() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
+
+        // Add a single event first
+        let single_event = SimpleEvent {
+            id: 0,
+            timestamp: 1702400000,
+            value: 10,
+        };
+        let seq1 = store.append(&single_event).expect("append failed");
+        assert_eq!(seq1, 0);
+
+        // Now append a batch
+        let batch_events = vec![
+            SimpleEvent {
+                id: 1,
+                timestamp: 1702400001,
+                value: 20,
+            },
+            SimpleEvent {
+                id: 2,
+                timestamp: 1702400002,
+                value: 30,
+            },
+        ];
+        let sequences = store
+            .append_batch(&batch_events)
+            .expect("append_batch failed");
+        assert_eq!(sequences, vec![1, 2]);
+
+        let mut reader = store.reader();
+        let archived = get_archived_simple(&mut reader, 0);
+        assert_eq!(archived.id, 0);
+        let archived = get_archived_simple(&mut reader, 1);
+        assert_eq!(archived.id, 1);
+        let archived = get_archived_simple(&mut reader, 2);
+        assert_eq!(archived.id, 2);
     }
 }
