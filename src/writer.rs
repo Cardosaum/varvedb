@@ -100,7 +100,9 @@ impl<const N: usize> Writer<N> {
     pub fn append<T>(&mut self, event: &T) -> Result<(), Error>
     where
         T: for<'a> rkyv::Serialize<LowSerializer<'a>>,
+        T: std::fmt::Debug,
     {
+        dbg!(event);
         let writer = rkyv::ser::writer::Buffer::from(&mut self.serializer_buffer);
         let mut serializer = rkyv::ser::Serializer::new(writer, (), ());
         let strategy = Strategy::<_, rkyv::rancor::Error>::wrap(&mut serializer);
@@ -110,6 +112,7 @@ impl<const N: usize> Writer<N> {
 
         let pos = serializer.into_writer().len();
         let serialized_bytes = &self.serializer_buffer[..pos];
+        dbg!(serialized_bytes);
 
         let mut wtxn = self.env.write_txn()?;
         self.events_db.put_with_flags(
