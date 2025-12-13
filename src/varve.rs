@@ -19,8 +19,8 @@ use crate::{constants, timed_dbg, types::EventsDb};
 pub enum Error {
     #[error(transparent)]
     Heed(#[from] HeedError),
-    #[error("Serialization error: {0}")]
-    Serialization(String),
+    #[error(transparent)]
+    Rkyv(#[from] rkyv::rancor::Error),
     #[error("Database not found: {0}")]
     DatabaseNotFound(String),
 }
@@ -128,8 +128,7 @@ impl<const N: usize> Varve<N> {
     {
         let writer = rkyv::ser::writer::Buffer::from(&mut self.serializer_buffer);
         let mut serializer = rkyv::ser::Serializer::new(writer, (), ());
-        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)
-            .map_err(|e| Error::Serialization(format!("{e:?}")))?;
+        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)?;
         let pos = serializer.into_writer().len();
         Ok(self.serializer_buffer[..pos].to_vec())
     }
@@ -143,8 +142,7 @@ impl<const N: usize> Varve<N> {
         let writer = rkyv::ser::writer::Buffer::from(&mut self.serializer_buffer);
         let sharing = rkyv::ser::sharing::Share::new();
         let mut serializer = rkyv::ser::Serializer::new(writer, arena.acquire(), sharing);
-        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)
-            .map_err(|e| Error::Serialization(format!("{e:?}")))?;
+        rkyv::api::serialize_using::<_, rkyv::rancor::Error>(event, &mut serializer)?;
         let pos = serializer.into_writer().len();
         Ok(self.serializer_buffer[..pos].to_vec())
     }
@@ -355,9 +353,7 @@ impl VarveReader {
         let Some(bytes) = self.get_bytes(sequence)? else {
             return Ok(None);
         };
-
-        let archived = rkyv::access::<rkyv::Archived<T>, rkyv::rancor::Error>(bytes)
-            .map_err(|e| Error::Serialization(format!("{:?}", e)))?;
+        let archived = rkyv::access::<rkyv::Archived<T>, rkyv::rancor::Error>(bytes)?;
         Ok(Some(archived))
     }
 
