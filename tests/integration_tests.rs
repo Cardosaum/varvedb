@@ -257,8 +257,8 @@ fn test_write_and_read_simple_event() {
 
     // Write the event
     {
-        let mut writer =
-            Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
         writer.append(&event).expect("Failed to append event");
     }
 
@@ -267,8 +267,8 @@ fn test_write_and_read_simple_event() {
     let result = reader.get(0).expect("Failed to get event");
     let bytes = result.borrow_data().expect("Should have data");
 
-    let archived =
-        rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes).expect("Failed to access");
+    let archived = rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes)
+        .expect("Failed to access");
 
     assert_eq!(archived.id, 1);
     assert_eq!(archived.timestamp, 1702400000);
@@ -284,8 +284,8 @@ fn test_write_and_read_multiple_simple_events() {
 
     // Write events
     {
-        let mut writer =
-            Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
 
         for i in 0..NUM_EVENTS {
             let event = SimpleEvent {
@@ -329,8 +329,8 @@ fn test_write_and_read_payment_event() {
 
     // Write the event
     {
-        let mut writer =
-            Writer::<4096>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<4096>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
         writer.append_alloc(&event).expect("Failed to append event");
     }
 
@@ -380,8 +380,8 @@ fn test_write_and_read_user_event_with_tags() {
 
     // Write the event
     {
-        let mut writer =
-            Writer::<4096>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<4096>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
         writer.append_alloc(&event).expect("Failed to append event");
     }
 
@@ -446,8 +446,8 @@ fn test_write_and_read_order_with_nested_items() {
 
     // Write the event
     {
-        let mut writer =
-            Writer::<8192>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<8192>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
         writer.append_alloc(&event).expect("Failed to append event");
     }
 
@@ -487,8 +487,8 @@ fn test_write_and_read_mixed_event_stream() {
 
     // Write a realistic sequence of domain events
     {
-        let mut writer =
-            Writer::<8192>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<8192>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
 
         // Event 0: User registered
         let user_registered = DomainEvent::User(events::user::User::Registered(
@@ -516,7 +516,9 @@ fn test_write_and_read_mixed_event_stream() {
                 total: 2999,
             }),
         ));
-        writer.append_alloc(&order_placed).expect("Failed to append");
+        writer
+            .append_alloc(&order_placed)
+            .expect("Failed to append");
 
         // Event 2: Payment created
         let payment_created = DomainEvent::Payment(events::payment::Payment::Created(
@@ -600,12 +602,14 @@ fn test_write_and_read_mixed_event_stream() {
             .expect("Failed to access");
 
         match archived {
-            ArchivedDomainEvent::Order(events::order::ArchivedOrder::Placed(placed)) => match placed {
-                events::order::placed::ArchivedPlaced::V1(v1) => {
-                    assert_eq!(v1.order_id.as_str(), "ord_001");
-                    assert_eq!(v1.total, 2999);
+            ArchivedDomainEvent::Order(events::order::ArchivedOrder::Placed(placed)) => {
+                match placed {
+                    events::order::placed::ArchivedPlaced::V1(v1) => {
+                        assert_eq!(v1.order_id.as_str(), "ord_001");
+                        assert_eq!(v1.total, 2999);
+                    }
                 }
-            },
+            }
             _ => panic!("Expected Order::Placed at position 1"),
         }
     }
@@ -638,12 +642,14 @@ fn test_write_and_read_mixed_event_stream() {
             .expect("Failed to access");
 
         match archived {
-            ArchivedDomainEvent::Order(events::order::ArchivedOrder::Shipped(shipped)) => match shipped {
-                events::order::shipped::ArchivedShipped::V1(v1) => {
-                    assert_eq!(v1.order_id.as_str(), "ord_001");
-                    assert_eq!(v1.tracking_number.as_str(), "1Z999AA10123456784");
+            ArchivedDomainEvent::Order(events::order::ArchivedOrder::Shipped(shipped)) => {
+                match shipped {
+                    events::order::shipped::ArchivedShipped::V1(v1) => {
+                        assert_eq!(v1.order_id.as_str(), "ord_001");
+                        assert_eq!(v1.tracking_number.as_str(), "1Z999AA10123456784");
+                    }
                 }
-            },
+            }
             _ => panic!("Expected Order::Shipped at position 3"),
         }
     }
@@ -728,8 +734,8 @@ fn test_write_with_custom_config_and_read() {
     let result = reader.get(0).expect("Failed to get");
     let bytes = result.borrow_data().expect("Should have data");
 
-    let archived =
-        rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes).expect("Failed to access");
+    let archived = rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes)
+        .expect("Failed to access");
 
     assert_eq!(archived.id, 999);
     assert_eq!(archived.value, -42);
@@ -795,8 +801,8 @@ fn test_concurrent_readers() {
 
     // Write some events
     {
-        let mut writer =
-            Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
 
         for i in 0..100 {
             let event = SimpleEvent {
@@ -808,26 +814,35 @@ fn test_concurrent_readers() {
         }
     }
 
-    let path = Arc::new(dir.path().to_path_buf());
+    let reader = Arc::new(
+        Reader::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create reader"),
+    );
 
     // Spawn multiple reader threads
     let handles: Vec<_> = (0..4)
         .map(|thread_id| {
-            let path = Arc::clone(&path);
+            let reader = Arc::clone(&reader);
             thread::spawn(move || {
-                let reader =
-                    Reader::new::<ChaCha20Poly1305>(key, path.as_ref()).expect("Failed to create reader");
-
                 // Each thread reads a different portion
                 for i in (thread_id * 25)..((thread_id + 1) * 25) {
-                    let result = reader.get(i as u64).expect("Failed to get");
+                    let result = reader
+                        .get(i as u64)
+                        .inspect_err(|e| eprintln!("Error getting event: {:?}", e))
+                        .expect("Failed to get");
                     let bytes = result.borrow_data().expect("Should have data");
-                    let archived =
-                        rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes)
-                            .expect("Failed to access");
 
-                    assert_eq!(archived.id, i as u64);
-                    assert_eq!(archived.value, i * 2);
+                    // NOTE: The bytes returned from LMDB/heed are borrowed from the transaction.
+                    // For concurrent reads we defensively copy them into an aligned, owned buffer
+                    // before decoding.
+                    let mut owned = rkyv::util::AlignedVec::<16>::with_capacity(bytes.len());
+                    owned.extend_from_slice(bytes);
+
+                    let event = rkyv::from_bytes::<SimpleEvent, rkyv::rancor::Error>(&owned)
+                        .inspect_err(|e| eprintln!("Error deserializing event: {:?}", e))
+                        .expect("Failed to deserialize");
+
+                    assert_eq!(event.id, i as u64);
+                    assert_eq!(event.value, i * 2);
                 }
             })
         })
@@ -846,8 +861,8 @@ fn test_read_nonexistent_sequence() {
 
     // Write one event
     {
-        let mut writer =
-            Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
         let event = SimpleEvent {
             id: 0,
             timestamp: 0,
@@ -859,10 +874,18 @@ fn test_read_nonexistent_sequence() {
     let reader = Reader::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create reader");
 
     // Sequence 0 should exist
-    assert!(reader.get(0).expect("Failed to get").borrow_data().is_some());
+    assert!(reader
+        .get(0)
+        .expect("Failed to get")
+        .borrow_data()
+        .is_some());
 
     // Sequence 1 should not exist
-    assert!(reader.get(1).expect("Failed to get").borrow_data().is_none());
+    assert!(reader
+        .get(1)
+        .expect("Failed to get")
+        .borrow_data()
+        .is_none());
 
     // High sequences should not exist
     assert!(reader
@@ -884,8 +907,8 @@ fn test_payment_refund_flow() {
 
     // Write payment flow
     {
-        let mut writer =
-            Writer::<4096>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create writer");
+        let mut writer = Writer::<4096>::new::<ChaCha20Poly1305>(key, dir.path())
+            .expect("Failed to create writer");
 
         // Payment created
         let payment = DomainEvent::Payment(events::payment::Payment::Created(
@@ -950,4 +973,3 @@ fn test_payment_refund_flow() {
         }
     }
 }
-
