@@ -328,9 +328,6 @@ impl VarveReader {
     }
 
     /// Read an event by sequence into an internal aligned scratch buffer and return stable bytes.
-    ///
-    /// This is the recommended API for **concurrent readers** with encrypted LMDB, because
-    /// borrowed slices may be invalidated by other reads due to LMDB's decrypt cache design.
     pub fn get_bytes(&mut self, sequence: u64) -> Result<Option<&[u8]>, Error> {
         let rtxn = self.core.env.read_txn()?;
         let bytes = self.core.events_db.get(&rtxn, &sequence)?;
