@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use chacha20poly1305::aead::{AeadMutInPlace, Key};
 use chacha20poly1305::KeyInit;
-use heed3::{EncryptedEnv, EnvOpenOptions, PutFlags};
+use heed::{Env, EnvOpenOptions, Error as HeedError, PutFlags, RoTxn, WithTls};
 use rkyv::rancor::Strategy;
 use rkyv::ser::allocator::Arena;
 
@@ -20,7 +20,7 @@ use crate::{constants, types::EventsDb};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Heed(#[from] heed3::Error),
+    Heed(#[from] HeedError),
     #[error("Serialization error: {0}")]
     Serialization(String),
     #[error("Database not found: {0}")]
@@ -53,7 +53,7 @@ pub struct Varve<const N: usize> {
 }
 
 struct VarveCore {
-    env: EncryptedEnv,
+    env: Env,
     events_db: EventsDb,
 }
 
@@ -72,24 +72,17 @@ pub type HighSerializer<'a> = Strategy<
 >;
 
 impl<const N: usize> Varve<N> {
-    pub fn new<E: AeadMutInPlace + KeyInit>(
-        key: Key<E>,
-        path: impl AsRef<Path>,
-    ) -> Result<Self, Error> {
-        Self::with_config::<E>(key, path, VarveConfig::default())
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
+        Self::with_config(path, VarveConfig::default())
     }
 
-    pub fn with_config<E: AeadMutInPlace + KeyInit>(
-        key: Key<E>,
-        path: impl AsRef<Path>,
-        config: VarveConfig,
-    ) -> Result<Self, Error> {
+    pub fn with_config(path: impl AsRef<Path>, config: VarveConfig) -> Result<Self, Error> {
         let env = unsafe {
             EnvOpenOptions::new()
                 .read_txn_with_tls()
                 .max_dbs(config.max_dbs)
                 .map_size(config.map_size)
-                .open_encrypted::<E, _>(key, path)?
+                .open(path)?
         };
 
         let events_db: EventsDb = {
@@ -213,7 +206,7 @@ pub struct VarveReader {
 
 #[ouroboros::self_referencing]
 pub struct VarveGetResult<'a> {
-    pub guard: heed3::RoTxn<'a, heed3::WithTls>,
+    pub guard: RoTxn<'a, WithTls>,
     #[borrows(mut guard)]
     #[covariant]
     pub data: Option<&'this [u8]>,
@@ -556,8 +549,7 @@ mod tests {
         let dir = tempdir().expect("Failed to create temp dir");
         let key = generate_key();
 
-        let mut store = Varve::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
-            .expect("Failed to create Varve");
+        let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
 
         let event = SimpleEvent {
             id: 1,
@@ -580,8 +572,7 @@ mod tests {
         let dir = tempdir().expect("Failed to create temp dir");
         let key = generate_key();
 
-        let mut store = Varve::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
-            .expect("Failed to create Varve");
+        let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
 
         for i in 0..100u64 {
             let event = SimpleEvent {
@@ -605,10 +596,7 @@ mod tests {
     #[test]
     fn test_append_alloc_and_read_payment_event() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
-
-        let mut store = Varve::<4096>::new::<ChaCha20Poly1305>(key, dir.path())
-            .expect("Failed to create Varve");
+        let mut store = Varve::<4096>::new(dir.path()).expect("Failed to create Varve");
 
         let event = DomainEvent::Payment(events::payment::Payment::Created(
             events::payment::created::Created::V1(events::payment::created::V1 {
@@ -643,10 +631,8 @@ mod tests {
     #[test]
     fn test_append_alloc_and_read_user_event_with_tags() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
 
-        let mut store = Varve::<4096>::new::<ChaCha20Poly1305>(key, dir.path())
-            .expect("Failed to create Varve");
+        let mut store = Varve::<4096>::new(dir.path()).expect("Failed to create Varve");
 
         let tags = vec![
             "premium".to_string(),
@@ -690,10 +676,8 @@ mod tests {
     #[test]
     fn test_append_alloc_and_read_order_with_nested_items() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
 
-        let mut store = Varve::<8192>::new::<ChaCha20Poly1305>(key, dir.path())
-            .expect("Failed to create Varve");
+        let mut store = Varve::<8192>::new(dir.path()).expect("Failed to create Varve");
 
         let items = vec![
             events::order::placed::OrderItem {
@@ -751,10 +735,8 @@ mod tests {
     #[test]
     fn test_get_nonexistent_sequence_returns_none() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
 
-        let store = Varve::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
-            .expect("Failed to create Varve");
+        let store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
         let mut reader = store.reader();
 
         assert!(reader.get_bytes(0).expect("get_bytes failed").is_none());
@@ -763,11 +745,9 @@ mod tests {
     #[test]
     fn test_append_sequence_is_persistent_across_reopen() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
 
         {
-            let mut store = Varve::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
-                .expect("Failed to create Varve");
+            let mut store = Varve::<1024>::new(dir.path()).expect("Failed to create Varve");
             let e0 = SimpleEvent {
                 id: 0,
                 timestamp: 0,
@@ -783,8 +763,7 @@ mod tests {
         }
 
         // Reopen and ensure the next sequence continues.
-        let mut store = Varve::<1024>::new::<ChaCha20Poly1305>(key, dir.path())
-            .expect("Failed to reopen Varve");
+        let mut store = Varve::<1024>::new(dir.path()).expect("Failed to reopen Varve");
         let e2 = SimpleEvent {
             id: 2,
             timestamp: 2,
@@ -800,10 +779,8 @@ mod tests {
     #[test]
     fn test_append_alloc_buffer_too_small_should_fail() {
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
 
-        let mut store =
-            Varve::<64>::new::<ChaCha20Poly1305>(key, dir.path()).expect("Failed to create Varve");
+        let mut store = Varve::<64>::new(dir.path()).expect("Failed to create Varve");
 
         let event = DomainEvent::Payment(events::payment::Payment::Created(
             events::payment::created::Created::V1(events::payment::created::V1 {
@@ -824,14 +801,10 @@ mod tests {
         use std::time::{Duration, Instant};
 
         let dir = tempdir().expect("Failed to create temp dir");
-        let key = generate_key();
 
-        let mut store = Varve::<{ std::mem::size_of::<SimpleEvent>() }>::new::<ChaCha20Poly1305>(
-            key,
-            dir.path(),
-        )
-        .inspect_err(|e| eprintln!("Error creating Varve: {e:?}"))
-        .expect("Failed to create Varve");
+        let mut store = Varve::<{ std::mem::size_of::<SimpleEvent>() }>::new(dir.path())
+            .inspect_err(|e| eprintln!("Error creating Varve: {e:?}"))
+            .expect("Failed to create Varve");
 
         let r1 = store.reader();
         let r2 = r1.clone();

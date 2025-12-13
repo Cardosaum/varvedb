@@ -6,10 +6,10 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
-use heed3::byteorder::BigEndian;
-use heed3::types::Bytes;
-use heed3::types::U64;
-use heed3::EncryptedDatabase;
+use heed::byteorder::BigEndian;
+use heed::types::Bytes;
+use heed::types::U64;
+use heed::Database;
 
 pub type SequenceKey = U64<BigEndian>;
-pub type EventsDb = EncryptedDatabase<SequenceKey, Bytes>;
+pub type EventsDb = Database<SequenceKey, Bytes>;

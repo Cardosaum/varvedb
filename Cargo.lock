@@ -462,7 +462,6 @@ version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bb6743198531e02858aeaea5398fcc883e71851fcbcb5a2f773e2fb6cb1edf2"
 dependencies = [
- "serde",
  "typenum",
  "version_check",
 ]
@@ -542,6 +541,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
+name = "heed"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a56c94661ddfb51aa9cdfbf102cfcc340aa69267f95ebccc4af08d7c530d393"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "heed-traits",
+ "heed-types",
+ "libc",
+ "lmdb-master-sys",
+ "once_cell",
+ "page_size",
+ "serde",
+ "synchronoise",
+ "url",
+]
+
+[[package]]
 name = "heed-traits"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -558,27 +576,6 @@ dependencies = [
  "heed-traits",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "heed3"
-version = "0.22.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cb8e15e526c34dc6aa19ee62c125324e34af32bcfe4cb8b0de4be621735f007"
-dependencies = [
- "aead",
- "bitflags",
- "byteorder",
- "generic-array",
- "heed-traits",
- "heed-types",
- "libc",
- "lmdb-master3-sys",
- "once_cell",
- "page_size",
- "serde",
- "synchronoise",
- "url",
 ]
 
 [[package]]
@@ -763,10 +760,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 
 [[package]]
-name = "lmdb-master3-sys"
+name = "lmdb-master-sys"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e744ace4c7d8002c577b8985438f467b21950f263015420112e053685fcfd8f"
+checksum = "864808e0b19fb6dd3b70ba94ee671b82fce17554cf80aeb0a155c65bb08027df"
 dependencies = [
  "cc",
  "doxygen-rs",
@@ -1544,7 +1541,7 @@ dependencies = [
  "bytecheck",
  "chacha20poly1305",
  "criterion",
- "heed3",
+ "heed",
  "ouroboros",
  "proptest",
  "rkyv",
