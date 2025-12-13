@@ -10,7 +10,7 @@ pub mod constants;
 pub mod types;
 #[macro_use]
 pub mod utils;
-pub mod varve;
 pub mod log;
+pub mod varve;
 
 pub use varve::{Varve, VarveReader};
