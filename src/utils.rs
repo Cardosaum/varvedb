@@ -98,7 +98,7 @@ macro_rules! timed_dbg {
     ($label:expr, $block:expr) => {{
         let __timed_start = ::std::time::Instant::now();
         let __timed_result = $block;
-        ::std::eprintln!("[varve] {}: {:?}", $label, __timed_start.elapsed());
+        ::tracing::trace!("[varve] {}: {:?}", $label, __timed_start.elapsed());
         __timed_result
     }};
 }
