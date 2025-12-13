@@ -213,4 +213,3 @@ mod tests {
         assert!(CALLED.load(Ordering::SeqCst));
     }
 }
-
