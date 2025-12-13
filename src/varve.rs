@@ -91,8 +91,8 @@ impl<const N: usize> Varve<N> {
         };
 
         let next_sequence = {
-            let mut rtxn = env.read_txn()?;
-            let last = events_db.last(&mut rtxn)?;
+            let rtxn = env.read_txn()?;
+            let last = events_db.last(&rtxn)?;
             // NOTE: we intentionally abort the read txn on drop (cheaper than commit).
             match last {
                 Some((last_key, _)) => last_key.saturating_add(1),
@@ -332,8 +332,8 @@ impl VarveReader {
     /// This is the recommended API for **concurrent readers** with encrypted LMDB, because
     /// borrowed slices may be invalidated by other reads due to LMDB's decrypt cache design.
     pub fn get_bytes(&mut self, sequence: u64) -> Result<Option<&[u8]>, Error> {
-        let mut rtxn = self.core.env.read_txn()?;
-        let bytes = self.core.events_db.get(&mut rtxn, &sequence)?;
+        let rtxn = self.core.env.read_txn()?;
+        let bytes = self.core.events_db.get(&rtxn, &sequence)?;
         match bytes {
             Some(b) => {
                 self.scratch.clear();
