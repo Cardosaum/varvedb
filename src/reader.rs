@@ -283,8 +283,6 @@ mod tests {
         assert!(data.is_some());
         let bytes = data.unwrap();
 
-        dbg!(bytes);
-
         // Deserialize and verify
         let archived = rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(bytes)
             .expect("Failed to access archived data");
