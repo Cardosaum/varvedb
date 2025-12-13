@@ -7,7 +7,7 @@
 // obtain one at http://mozilla.org/MPL/2.0/.
 
 pub mod constants;
-pub mod reader;
 pub mod types;
 pub mod varve;
-pub mod writer;
+
+pub use varve::{Varve, VarveReader};
