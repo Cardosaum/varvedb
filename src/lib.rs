@@ -11,6 +11,15 @@ pub mod types;
 #[macro_use]
 pub mod utils;
 pub mod log;
+pub mod stream;
 pub mod varve;
 
-pub use varve::{Varve, VarveReader};
+// Re-export main types for convenience
+pub use stream::{Stream, StreamReader};
+pub use types::{
+    EventMeta, GlobalEventRecord, GlobalSequence, StreamId, StreamKey, StreamSequence,
+};
+pub use varve::{Error, GlobalReader, HighSerializer, LowSerializer, Varve, VarveConfig};
+
+// Legacy re-export (for backwards compatibility during migration)
+// pub use varve::VarveReader;
