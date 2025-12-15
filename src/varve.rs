@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use heed::{Env, EnvOpenOptions, Error as HeedError, RoTxn, WithTls};
@@ -15,7 +16,8 @@ use heed::{Env, EnvOpenOptions, Error as HeedError, RoTxn, WithTls};
 use crate::constants;
 use crate::stream::{Stream, StreamCore};
 use crate::types::{
-    GlobalEventRecord, GlobalEventsDb, GlobalSequence, StreamEventsDb, StreamMetaDb,
+    GlobalEventRecord, GlobalEventsDb, GlobalSequence, StreamId, StreamIndexDb, StreamMetaDb,
+    StreamSequence,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -47,14 +49,10 @@ impl Default for VarveConfig {
     }
 }
 
-/// Core shared state for Varve (used for reader access)
-#[allow(dead_code)]
-struct VarveCore {
-    env: Env,
-    global_db: GlobalEventsDb,
+/// Per-stream database handles
+struct StreamDbs {
+    index_db: StreamIndexDb,
     meta_db: StreamMetaDb,
-    /// Stream databases indexed by name (reserved for future reader access)
-    stream_dbs: HashMap<String, StreamEventsDb>,
 }
 
 /// A single-open event store handle with stream-based organization.
@@ -63,13 +61,12 @@ struct VarveCore {
 /// - Use stream handles for typed access to specific streams.
 /// - Use [`Varve::global_reader`] for reading events across all streams.
 pub struct Varve {
-    core: Arc<VarveCore>,
-    /// Mutable env handle for creating new stream databases
     env: Env,
-    /// Next global sequence number
-    next_global_seq: u64,
-    /// Stream databases (mutable for lazy creation)
-    stream_dbs: HashMap<String, StreamEventsDb>,
+    global_db: GlobalEventsDb,
+    /// Shared global sequence counter (atomic for lock-free access across streams)
+    next_global_seq: Arc<AtomicU64>,
+    /// Per-stream database handles (lazy creation)
+    stream_dbs: HashMap<String, StreamDbs>,
 }
 
 impl Varve {
@@ -94,15 +91,7 @@ impl Varve {
             db
         };
 
-        // Create or open the stream metadata database
-        let meta_db: StreamMetaDb = {
-            let mut wtxn = env.write_txn()?;
-            let db = env.create_database(&mut wtxn, Some(constants::STREAM_META_DB_NAME))?;
-            wtxn.commit()?;
-            db
-        };
-
-        // Get the next global sequence
+        // Get the next global sequence from the last entry
         let next_global_seq = {
             let rtxn = env.read_txn()?;
             match global_db.last(&rtxn)? {
@@ -111,87 +100,92 @@ impl Varve {
             }
         };
 
-        let core = Arc::new(VarveCore {
-            env: env.clone(),
-            global_db,
-            meta_db,
-            stream_dbs: HashMap::new(),
-        });
-
         Ok(Self {
-            core,
             env,
-            next_global_seq,
+            global_db,
+            next_global_seq: Arc::new(AtomicU64::new(next_global_seq)),
             stream_dbs: HashMap::new(),
         })
     }
 
     /// Get the current next global sequence
     pub fn next_global_seq(&self) -> GlobalSequence {
-        GlobalSequence(self.next_global_seq)
+        GlobalSequence(self.next_global_seq.load(Ordering::Relaxed))
     }
 
     /// Create or get a typed stream handle.
     ///
-    /// The stream name is used to create a separate LMDB database for efficient
-    /// prefix-based iteration.
+    /// The stream name is used to create separate LMDB databases for efficient
+    /// stream-based iteration.
     ///
     /// # Type Parameters
     /// - `T`: The event payload type (must implement rkyv serialization)
     /// - `N`: The serialization buffer size (must be large enough for your events)
     pub fn stream<T, const N: usize>(&mut self, name: &str) -> Result<Stream<T, N>, Error> {
-        // Get or create the stream database
-        let events_db = self.get_or_create_stream_db(name)?;
+        // Get or create the stream databases
+        let (index_db, meta_db) = self.get_or_create_stream_dbs(name)?;
 
         let stream_core = Arc::new(StreamCore {
             env: self.env.clone(),
             stream_name: name.to_string(),
-            events_db,
-            meta_db: self.core.meta_db,
-            global_db: self.core.global_db,
+            index_db,
+            meta_db,
+            global_db: self.global_db,
+            next_global_seq: Arc::clone(&self.next_global_seq),
         });
 
-        Ok(Stream::new(stream_core, self.next_global_seq))
+        Ok(Stream::new(stream_core))
     }
 
-    /// Get or create a stream database
-    fn get_or_create_stream_db(&mut self, name: &str) -> Result<StreamEventsDb, Error> {
-        if let Some(db) = self.stream_dbs.get(name) {
-            return Ok(*db);
+    /// Get or create stream databases (index + meta)
+    fn get_or_create_stream_dbs(
+        &mut self,
+        name: &str,
+    ) -> Result<(StreamIndexDb, StreamMetaDb), Error> {
+        if let Some(dbs) = self.stream_dbs.get(name) {
+            return Ok((dbs.index_db, dbs.meta_db));
         }
 
-        let db_name = format!("{}{}", constants::STREAM_DB_PREFIX, name);
-        let db: StreamEventsDb = {
+        let index_db_name = format!(
+            "{}{}{}",
+            constants::STREAM_DB_PREFIX,
+            name,
+            constants::STREAM_INDEX_SUFFIX
+        );
+        let meta_db_name = format!(
+            "{}{}{}",
+            constants::STREAM_DB_PREFIX,
+            name,
+            constants::STREAM_META_SUFFIX
+        );
+
+        let index_db: StreamIndexDb = {
             let mut wtxn = self.env.write_txn()?;
-            let db = self.env.create_database(&mut wtxn, Some(&db_name))?;
+            let db = self.env.create_database(&mut wtxn, Some(&index_db_name))?;
             wtxn.commit()?;
             db
         };
 
-        self.stream_dbs.insert(name.to_string(), db);
-        Ok(db)
+        let meta_db: StreamMetaDb = {
+            let mut wtxn = self.env.write_txn()?;
+            let db = self.env.create_database(&mut wtxn, Some(&meta_db_name))?;
+            wtxn.commit()?;
+            db
+        };
+
+        self.stream_dbs
+            .insert(name.to_string(), StreamDbs { index_db, meta_db });
+
+        Ok((index_db, meta_db))
     }
 
     /// Create a reader for global event iteration
     pub fn global_reader(&self) -> GlobalReader {
         GlobalReader {
             env: self.env.clone(),
-            global_db: self.core.global_db,
+            global_db: self.global_db,
             scratch: rkyv::util::AlignedVec::new(),
         }
-    }
-
-    /// Update the internal next_global_seq after stream operations
-    ///
-    /// This should be called after using a Stream to keep the Varve's
-    /// sequence counter in sync.
-    pub fn sync_global_seq(&mut self) -> Result<(), Error> {
-        let rtxn = self.env.read_txn()?;
-        self.next_global_seq = match self.core.global_db.last(&rtxn)? {
-            Some((last_key, _)) => last_key.saturating_add(1),
-            None => 0,
-        };
-        Ok(())
     }
 }
 
@@ -204,14 +198,37 @@ pub struct GlobalReader {
 
 impl GlobalReader {
     /// Get a single event by global sequence
-    pub fn get(&mut self, global_seq: GlobalSequence) -> Result<Option<GlobalEventRecord>, Error> {
+    pub fn get(&mut self, global_seq: GlobalSequence) -> Result<Option<GlobalEvent>, Error> {
         let rtxn = self.env.read_txn()?;
         let bytes = self.global_db.get(&rtxn, &global_seq.0)?;
         match bytes {
             Some(b) => {
                 self.scratch.clear();
                 self.scratch.extend_from_slice(b);
-                Ok(GlobalEventRecord::from_bytes(&self.scratch))
+                match GlobalEventRecord::from_bytes(&self.scratch) {
+                    Some(record) => Ok(Some(GlobalEvent {
+                        global_seq,
+                        stream_name: record.stream_name,
+                        stream_id: record.stream_id,
+                        stream_seq: record.stream_seq,
+                        payload: record.payload,
+                    })),
+                    None => Ok(None),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Get raw bytes for an event by global sequence
+    pub fn get_bytes(&mut self, global_seq: GlobalSequence) -> Result<Option<&[u8]>, Error> {
+        let rtxn = self.env.read_txn()?;
+        let bytes = self.global_db.get(&rtxn, &global_seq.0)?;
+        match bytes {
+            Some(b) => {
+                self.scratch.clear();
+                self.scratch.extend_from_slice(b);
+                Ok(GlobalEventRecord::payload_from_bytes(&self.scratch))
             }
             None => Ok(None),
         }
@@ -238,6 +255,16 @@ impl Clone for GlobalReader {
     }
 }
 
+/// A global event with all metadata
+#[derive(Debug, Clone)]
+pub struct GlobalEvent {
+    pub global_seq: GlobalSequence,
+    pub stream_name: String,
+    pub stream_id: StreamId,
+    pub stream_seq: StreamSequence,
+    pub payload: Vec<u8>,
+}
+
 /// Iterator over global events
 pub struct GlobalIterator<'a> {
     db: GlobalEventsDb,
@@ -246,14 +273,20 @@ pub struct GlobalIterator<'a> {
 }
 
 impl<'a> GlobalIterator<'a> {
-    /// Collect all events as GlobalEventRecords
-    pub fn collect_all(self) -> Result<Vec<(GlobalSequence, GlobalEventRecord)>, Error> {
+    /// Collect all events as GlobalEvents
+    pub fn collect_all(self) -> Result<Vec<GlobalEvent>, Error> {
         let mut results = Vec::new();
         let iter = self.db.range(&self.rtxn, &(self.from..))?;
         for item in iter {
             let (seq, bytes) = item?;
             if let Some(record) = GlobalEventRecord::from_bytes(bytes) {
-                results.push((GlobalSequence(seq), record));
+                results.push(GlobalEvent {
+                    global_seq: GlobalSequence(seq),
+                    stream_name: record.stream_name,
+                    stream_id: record.stream_id,
+                    stream_seq: record.stream_seq,
+                    payload: record.payload,
+                });
             }
         }
         Ok(results)
@@ -262,13 +295,19 @@ impl<'a> GlobalIterator<'a> {
     /// Iterate and apply a function to each event
     pub fn for_each<F>(self, mut f: F) -> Result<(), Error>
     where
-        F: FnMut(GlobalSequence, GlobalEventRecord),
+        F: FnMut(GlobalEvent),
     {
         let iter = self.db.range(&self.rtxn, &(self.from..))?;
         for item in iter {
             let (seq, bytes) = item?;
             if let Some(record) = GlobalEventRecord::from_bytes(bytes) {
-                f(GlobalSequence(seq), record);
+                f(GlobalEvent {
+                    global_seq: GlobalSequence(seq),
+                    stream_name: record.stream_name,
+                    stream_id: record.stream_id,
+                    stream_seq: record.stream_seq,
+                    payload: record.payload,
+                });
             }
         }
         Ok(())
@@ -334,7 +373,7 @@ mod tests {
             value: 42,
         };
 
-        let stream_id = crate::types::StreamId(100);
+        let stream_id = StreamId(100);
         let (stream_seq, global_seq) = stream
             .append(stream_id, &event)
             .expect("Failed to append event");
@@ -364,7 +403,7 @@ mod tests {
             .stream::<SimpleEvent, 1024>("events")
             .expect("Failed to create stream");
 
-        let stream_id = crate::types::StreamId(1);
+        let stream_id = StreamId(1);
 
         for i in 0..10u64 {
             let event = SimpleEvent {
@@ -382,7 +421,7 @@ mod tests {
         // Verify all events
         for i in 0..10u64 {
             let bytes = stream
-                .get_bytes(stream_id, crate::types::StreamSequence(i))
+                .get_bytes(stream_id, StreamSequence(i))
                 .expect("Failed to get bytes")
                 .expect("Event not found");
             let archived =
@@ -400,8 +439,8 @@ mod tests {
             .stream::<SimpleEvent, 1024>("events")
             .expect("Failed to create stream");
 
-        let stream_id_1 = crate::types::StreamId(1);
-        let stream_id_2 = crate::types::StreamId(2);
+        let stream_id_1 = StreamId(1);
+        let stream_id_2 = StreamId(2);
 
         // Append to stream_id_1
         let (seq1_0, _) = stream
@@ -444,7 +483,7 @@ mod tests {
 
         // Verify
         let bytes = stream
-            .get_bytes(stream_id_1, crate::types::StreamSequence(0))
+            .get_bytes(stream_id_1, StreamSequence(0))
             .unwrap()
             .unwrap();
         let archived =
@@ -452,12 +491,138 @@ mod tests {
         assert_eq!(archived.id, 100);
 
         let bytes = stream
-            .get_bytes(stream_id_2, crate::types::StreamSequence(0))
+            .get_bytes(stream_id_2, StreamSequence(0))
             .unwrap()
             .unwrap();
         let archived =
             rkyv::access::<rkyv::Archived<SimpleEvent>, rkyv::rancor::Error>(&bytes).unwrap();
         assert_eq!(archived.id, 200);
+    }
+
+    #[test]
+    fn test_multiple_stream_names_share_global_sequence() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let mut varve = Varve::new(dir.path()).expect("Failed to create Varve");
+
+        // Create two different stream names
+        let mut orders = varve
+            .stream::<OrderEvent, 4096>("orders")
+            .expect("Failed to create orders stream");
+
+        let mut users = varve
+            .stream::<UserEvent, 4096>("users")
+            .expect("Failed to create users stream");
+
+        // Append to orders
+        let (stream_seq_1, global_seq_1) = orders
+            .append_alloc(
+                StreamId(1),
+                &OrderEvent {
+                    order_id: "ord_001".to_string(),
+                    customer_id: "cust_001".to_string(),
+                    amount: 100,
+                },
+            )
+            .unwrap();
+        assert_eq!(global_seq_1.0, 0);
+
+        // Append to users - should continue global sequence
+        let (stream_seq_2, global_seq_2) = users
+            .append_alloc(
+                StreamId(1),
+                &UserEvent {
+                    user_id: "usr_001".to_string(),
+                    email: "test@example.com".to_string(),
+                    action: "registered".to_string(),
+                },
+            )
+            .unwrap();
+        assert_eq!(global_seq_2.0, 1);
+
+        // Append to orders again
+        let (stream_seq_3, global_seq_3) = orders
+            .append_alloc(
+                StreamId(2),
+                &OrderEvent {
+                    order_id: "ord_002".to_string(),
+                    customer_id: "cust_002".to_string(),
+                    amount: 200,
+                },
+            )
+            .unwrap();
+        assert_eq!(global_seq_3.0, 2);
+
+        // Verify stream sequences are independent
+        // orders stream_id=1 has seq 0, orders stream_id=2 has seq 0
+        // users stream_id=1 has seq 0
+        assert_eq!(stream_seq_1.0, 0);
+        assert_eq!(stream_seq_2.0, 0);
+        assert_eq!(stream_seq_3.0, 0);
+    }
+
+    #[test]
+    fn test_same_stream_id_different_stream_names() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let mut varve = Varve::new(dir.path()).expect("Failed to create Varve");
+
+        let mut orders = varve
+            .stream::<SimpleEvent, 1024>("orders")
+            .expect("Failed to create orders stream");
+
+        let mut users = varve
+            .stream::<SimpleEvent, 1024>("users")
+            .expect("Failed to create users stream");
+
+        // Both use StreamId(1) but should have separate sequences
+        let (order_seq, _) = orders
+            .append(
+                StreamId(1),
+                &SimpleEvent {
+                    id: 100,
+                    timestamp: 1,
+                    value: 1,
+                },
+            )
+            .unwrap();
+        assert_eq!(order_seq.0, 0);
+
+        let (user_seq, _) = users
+            .append(
+                StreamId(1),
+                &SimpleEvent {
+                    id: 200,
+                    timestamp: 2,
+                    value: 2,
+                },
+            )
+            .unwrap();
+        assert_eq!(user_seq.0, 0); // Independent sequence!
+
+        // Append more to orders with same StreamId(1)
+        let (order_seq_2, _) = orders
+            .append(
+                StreamId(1),
+                &SimpleEvent {
+                    id: 101,
+                    timestamp: 3,
+                    value: 3,
+                },
+            )
+            .unwrap();
+        assert_eq!(order_seq_2.0, 1);
+
+        // Users still at 0 for StreamId(1)
+        let (user_seq_2, _) = users
+            .append(
+                StreamId(1),
+                &SimpleEvent {
+                    id: 201,
+                    timestamp: 4,
+                    value: 4,
+                },
+            )
+            .unwrap();
+        assert_eq!(user_seq_2.0, 1);
     }
 
     #[test]
@@ -469,7 +634,7 @@ mod tests {
             .stream::<OrderEvent, 4096>("orders")
             .expect("Failed to create stream");
 
-        let stream_id = crate::types::StreamId(12345);
+        let stream_id = StreamId(12345);
         let event = OrderEvent {
             order_id: "ord_abc123".to_string(),
             customer_id: "cust_xyz789".to_string(),
@@ -501,7 +666,7 @@ mod tests {
             .stream::<SimpleEvent, 1024>("events")
             .expect("Failed to create stream");
 
-        let stream_id = crate::types::StreamId(1);
+        let stream_id = StreamId(1);
         let events: Vec<SimpleEvent> = (0..100)
             .map(|i| SimpleEvent {
                 id: i,
@@ -526,81 +691,71 @@ mod tests {
         let dir = tempdir().expect("Failed to create temp dir");
         let mut varve = Varve::new(dir.path()).expect("Failed to create Varve");
 
-        // Create two different streams
-        {
-            let mut orders = varve
-                .stream::<OrderEvent, 4096>("orders")
-                .expect("Failed to create orders stream");
+        // Create two different streams and interleave writes
+        let mut orders = varve
+            .stream::<OrderEvent, 4096>("orders")
+            .expect("Failed to create orders stream");
 
-            orders
-                .append_alloc(
-                    crate::types::StreamId(1),
-                    &OrderEvent {
-                        order_id: "ord_001".to_string(),
-                        customer_id: "cust_001".to_string(),
-                        amount: 100,
-                    },
-                )
-                .unwrap();
-        }
+        orders
+            .append_alloc(
+                StreamId(1),
+                &OrderEvent {
+                    order_id: "ord_001".to_string(),
+                    customer_id: "cust_001".to_string(),
+                    amount: 100,
+                },
+            )
+            .unwrap();
 
-        // Sync global sequence
-        varve.sync_global_seq().unwrap();
+        let mut users = varve
+            .stream::<UserEvent, 4096>("users")
+            .expect("Failed to create users stream");
 
-        {
-            let mut users = varve
-                .stream::<UserEvent, 4096>("users")
-                .expect("Failed to create users stream");
+        users
+            .append_alloc(
+                StreamId(1),
+                &UserEvent {
+                    user_id: "usr_001".to_string(),
+                    email: "test@example.com".to_string(),
+                    action: "registered".to_string(),
+                },
+            )
+            .unwrap();
 
-            users
-                .append_alloc(
-                    crate::types::StreamId(1),
-                    &UserEvent {
-                        user_id: "usr_001".to_string(),
-                        email: "test@example.com".to_string(),
-                        action: "registered".to_string(),
-                    },
-                )
-                .unwrap();
-        }
+        // Get orders stream again to test shared global seq
+        let mut orders2 = varve
+            .stream::<OrderEvent, 4096>("orders")
+            .expect("Failed to get orders stream");
 
-        varve.sync_global_seq().unwrap();
-
-        {
-            let mut orders = varve
-                .stream::<OrderEvent, 4096>("orders")
-                .expect("Failed to create orders stream");
-
-            orders
-                .append_alloc(
-                    crate::types::StreamId(2),
-                    &OrderEvent {
-                        order_id: "ord_002".to_string(),
-                        customer_id: "cust_002".to_string(),
-                        amount: 200,
-                    },
-                )
-                .unwrap();
-        }
+        orders2
+            .append_alloc(
+                StreamId(2),
+                &OrderEvent {
+                    order_id: "ord_002".to_string(),
+                    customer_id: "cust_002".to_string(),
+                    amount: 200,
+                },
+            )
+            .unwrap();
 
         // Read global events
         let reader = varve.global_reader();
         let iter = reader
-            .iter_from(crate::types::GlobalSequence(0))
+            .iter_from(GlobalSequence(0))
             .expect("Failed to create iterator");
         let events = iter.collect_all().expect("Failed to collect events");
 
         assert_eq!(events.len(), 3);
 
-        // Check stream names
-        assert_eq!(events[0].1.stream_name, "orders");
-        assert_eq!(events[1].1.stream_name, "users");
-        assert_eq!(events[2].1.stream_name, "orders");
+        // Check stream names and global ordering
+        assert_eq!(events[0].stream_name, "orders");
+        assert_eq!(events[0].global_seq.0, 0);
 
-        // Check global sequences
-        assert_eq!(events[0].0 .0, 0);
-        assert_eq!(events[1].0 .0, 1);
-        assert_eq!(events[2].0 .0, 2);
+        assert_eq!(events[1].stream_name, "users");
+        assert_eq!(events[1].global_seq.0, 1);
+
+        assert_eq!(events[2].stream_name, "orders");
+        assert_eq!(events[2].global_seq.0, 2);
     }
 
     #[test]
@@ -612,7 +767,7 @@ mod tests {
             .stream::<SimpleEvent, 1024>("events")
             .expect("Failed to create stream");
 
-        let stream_id = crate::types::StreamId(42);
+        let stream_id = StreamId(42);
 
         // Append some events
         for i in 0..5u64 {
@@ -653,7 +808,7 @@ mod tests {
             .stream::<SimpleEvent, 1024>("events")
             .expect("Failed to create stream");
 
-        let stream_id = crate::types::StreamId(1);
+        let stream_id = StreamId(1);
 
         // Append 10 events
         for i in 0..10u64 {
@@ -672,7 +827,7 @@ mod tests {
         // Iterate from sequence 5
         let reader = stream.reader();
         let iter = reader
-            .iter_stream(stream_id, Some(crate::types::StreamSequence(5)))
+            .iter_stream(stream_id, Some(StreamSequence(5)))
             .expect("Failed to create iterator");
         let events = iter.collect_bytes().expect("Failed to collect bytes");
 
@@ -693,7 +848,7 @@ mod tests {
                 .stream::<SimpleEvent, 1024>("events")
                 .expect("Failed to create stream");
 
-            let stream_id = crate::types::StreamId(1);
+            let stream_id = StreamId(1);
             stream
                 .append(
                     stream_id,
@@ -727,7 +882,7 @@ mod tests {
                 .stream::<SimpleEvent, 1024>("events")
                 .expect("Failed to get stream");
 
-            let stream_id = crate::types::StreamId(1);
+            let stream_id = StreamId(1);
 
             // Append more
             let (stream_seq, global_seq) = stream

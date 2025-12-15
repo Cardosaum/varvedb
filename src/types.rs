@@ -63,19 +63,11 @@ impl From<GlobalSequence> for u64 {
     }
 }
 
-/// An event with full metadata
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EventMeta {
-    pub stream_id: StreamId,
-    pub stream_seq: StreamSequence,
-    pub global_seq: GlobalSequence,
-}
-
 // =============================================================================
 // LMDB Key Types
 // =============================================================================
 
-/// Composite key for stream events: [stream_id: u64 BE][stream_seq: u64 BE]
+/// Composite key for stream index: [stream_id: u64 BE][stream_seq: u64 BE]
 /// Total: 16 bytes, lexicographically ordered
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StreamKey {
@@ -142,16 +134,13 @@ impl<'a> BytesDecode<'a> for StreamKeyCodec {
     }
 }
 
-/// Key for stream metadata: [stream_id: u64 BE]
-/// Maps to next_sequence for that stream
-pub type StreamMetaKey = U64<BigEndian>;
-
 // =============================================================================
 // Global Event Record
 // =============================================================================
 
 /// Record stored in global_events DB
 /// Contains: stream_name (length-prefixed) + stream_id + stream_seq + payload
+/// This is the primary storage for event payloads.
 #[derive(Debug, Clone)]
 pub struct GlobalEventRecord {
     pub stream_name: String,
@@ -197,21 +186,29 @@ impl GlobalEventRecord {
             payload,
         })
     }
+
+    /// Get just the payload portion from raw bytes (for efficient reads)
+    pub fn payload_from_bytes(bytes: &[u8]) -> Option<&[u8]> {
+        if bytes.is_empty() {
+            return None;
+        }
+        let name_len = bytes[0] as usize;
+        if bytes.len() < 1 + name_len + 16 {
+            return None;
+        }
+        Some(&bytes[1 + name_len + 16..])
+    }
 }
 
 // =============================================================================
 // Database Type Aliases
 // =============================================================================
 
-/// Legacy events database (for backwards compatibility during migration)
-pub type SequenceKey = U64<BigEndian>;
-pub type EventsDb = Database<SequenceKey, Bytes>;
-
-/// Stream events database: StreamKey -> payload bytes
-pub type StreamEventsDb = Database<StreamKeyCodec, Bytes>;
-
-/// Global events database: global_seq -> GlobalEventRecord bytes
+/// Global events database: global_seq -> GlobalEventRecord bytes (primary storage)
 pub type GlobalEventsDb = Database<U64<BigEndian>, Bytes>;
 
-/// Stream metadata database: stream_id -> next_sequence
+/// Stream index database: StreamKey -> global_seq (pointer to global_events)
+pub type StreamIndexDb = Database<StreamKeyCodec, U64<BigEndian>>;
+
+/// Stream metadata database: stream_id -> next_sequence (per-stream counters)
 pub type StreamMetaDb = Database<U64<BigEndian>, U64<BigEndian>>;

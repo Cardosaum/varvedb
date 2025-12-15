@@ -16,7 +16,7 @@ pub mod varve;
 
 // Re-export main types for convenience
 pub use stream::{Stream, StreamReader};
-pub use types::{
-    EventMeta, GlobalEventRecord, GlobalSequence, StreamId, StreamKey, StreamSequence,
+pub use types::{GlobalSequence, StreamId, StreamKey, StreamSequence};
+pub use varve::{
+    Error, GlobalEvent, GlobalReader, HighSerializer, LowSerializer, Varve, VarveConfig,
 };
-pub use varve::{Error, GlobalReader, HighSerializer, LowSerializer, Varve, VarveConfig};
