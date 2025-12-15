@@ -20,6 +20,3 @@ pub use types::{
     EventMeta, GlobalEventRecord, GlobalSequence, StreamId, StreamKey, StreamSequence,
 };
 pub use varve::{Error, GlobalReader, HighSerializer, LowSerializer, Varve, VarveConfig};
-
-// Legacy re-export (for backwards compatibility during migration)
-// pub use varve::VarveReader;

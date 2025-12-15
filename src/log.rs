@@ -73,6 +73,6 @@ pub fn init(filter: impl AsRef<str>) -> LogResult<()> {
 pub mod test {
     #[rstest::fixture]
     pub fn log_init() {
-        super::init("intraradix=trace,info").expect("Failed to initialize logger");
+        super::init("varvedb=trace,info").expect("Failed to initialize logger");
     }
 }

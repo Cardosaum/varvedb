@@ -6,9 +6,6 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
-// Legacy database name (kept for reference)
-pub const EVENTS_DB_NAME: &str = "events";
-
 // Stream-based event store database names
 pub const GLOBAL_EVENTS_DB_NAME: &str = "global_events";
 pub const STREAM_META_DB_NAME: &str = "stream_meta";
