@@ -12,7 +12,7 @@ import '../styles/css/sections/code-window.css';
     <div class="container hero-content">
       <img src="/logo.svg" alt="VarveDB Logo" class="hero-logo" />
       <h1>The Embedded <br/><span class="highlight">Event Store</span></h1>
-      <p class="tagline">Map events directly from disk to memory. Eliminate serialization overhead and achieve sub-microsecond reads.</p>
+      <p class="tagline">Zero-copy event storage with sub-microsecond reads and 165,000+ events/sec batch writes.</p>
       <div class="cta-group">
         <a href="/docs/quick_start" class="btn btn-primary">Get Started</a>
         <a href="/docs/introduction" class="btn btn-secondary">Read the Docs</a>
@@ -28,28 +28,28 @@ import '../styles/css/sections/code-window.css';
 
   <section id="features" class="features varve-layer layer-2">
     <div class="container">
-      <h2>Production-Hardened Reliability</h2>
+      <h2>Built for Speed and Reliability</h2>
       <div class="features-grid">
         <div class="feature-card fade-in-section">
           <div class="feature-icon">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
           </div>
           <h3>Zero-Copy Reads</h3>
-          <p>Leverages <a href="#" class="tech-link">rkyv</a> to map data directly from disk. No deserialization step means reads are instant.</p>
+          <p>Leverages <a href="https://rkyv.org/" class="tech-link">rkyv</a> to map data directly from disk. No deserialization means reads complete in nanoseconds.</p>
+        </div>
+        <div class="feature-card fade-in-section">
+          <div class="feature-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+          </div>
+          <h3>Batch Writes</h3>
+          <p>Achieve 700x throughput gains by batching events. Single transaction overhead amortized across thousands of events.</p>
         </div>
         <div class="feature-card fade-in-section">
           <div class="feature-icon">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
           </div>
           <h3>Append-Only Log</h3>
-          <p>Immutable event stream ensures data integrity and simplifies replication. Perfect for Event Sourcing.</p>
-        </div>
-        <div class="feature-card fade-in-section">
-          <div class="feature-icon">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-          </div>
-          <h3>Authenticated Encryption</h3>
-          <p>Built-in <a href="#" class="tech-link">ChaCha20-Poly1305</a> encryption. Data is encrypted at rest with zero runtime overhead.</p>
+          <p>Immutable event stream ensures data integrity and simplifies replication. Perfect for Event Sourcing and CQRS.</p>
         </div>
       </div>
     </div>
@@ -58,7 +58,7 @@ import '../styles/css/sections/code-window.css';
   <section id="architecture" class="architecture varve-layer layer-3">
     <div class="container">
       <h2>Architecture</h2>
-      <p class="section-desc">Designed for throughput and reliability. A clean separation of concerns.</p>
+      <p class="section-desc">Memory-mapped storage for maximum throughput. Built on LMDB for ACID guarantees.</p>
       
       <div class="arch-container">
         <!-- Diagram Side -->
@@ -69,14 +69,14 @@ import '../styles/css/sections/code-window.css';
           
           <div class="arch-flow">
             <span class="arch-icon">⬇</span>
-            <span>Zero-Copy Read / Append</span>
+            <span>Zero-Copy Read / Batch Append</span>
           </div>
 
           <div class="arch-box varvedb" data-id="varvedb">
             <div class="arch-title">VarveDB Engine</div>
             <div class="arch-inner">
-              <div class="arch-component" data-id="writer">Batch Writer</div>
-              <div class="arch-component" data-id="indexer">Indexer</div>
+              <div class="arch-component" data-id="stream">Stream Handler</div>
+              <div class="arch-component" data-id="indexer">Index Manager</div>
               <div class="arch-component" data-id="cache">Page Cache</div>
             </div>
             
@@ -95,19 +95,21 @@ import '../styles/css/sections/code-window.css';
             <div class="code-dots"><span></span><span></span><span></span></div>
             <div class="code-title">src/main.rs</div>
           </div>
-          <pre is:raw><code><span class="keyword">use</span> varvedb::Varve;
+          <pre is:raw><code><span class="keyword">use</span> varvedb::{Varve, StreamId};
 
 <span class="keyword">fn</span> <span class="function">main</span>() -> <span class="type">Result</span><(), <span class="type">Error</span>> {
-<span class="code-line" data-related-id="varvedb">  <span class="comment">// Initialize the store</span></span>
-<span class="code-line" data-related-id="varvedb">  <span class="keyword">let</span> db = <span class="type">Varve</span>::<span class="function">open</span>(<span class="string">"./data"</span>)?;</span>
+<span class="code-line" data-related-id="varvedb">  <span class="comment">// Initialize the event store</span></span>
+<span class="code-line" data-related-id="varvedb">  <span class="keyword">let</span> <span class="keyword">mut</span> varve = <span class="type">Varve</span>::<span class="function">new</span>(<span class="string">"./data"</span>)?;</span>
 
-<span class="code-line" data-related-id="writer">  <span class="comment">// Append an event (Zero-Copy)</span></span>
-<span class="code-line" data-related-id="writer">  db.<span class="function">append</span>(<span class="type">Event</span>::new(<span class="string">"user_created"</span>, payload))?;</span>
+<span class="code-line" data-related-id="stream">  <span class="comment">// Create a typed stream</span></span>
+<span class="code-line" data-related-id="stream">  <span class="keyword">let</span> <span class="keyword">mut</span> stream = varve.<span class="function">stream</span>::<<span class="type">Event</span>, <span class="number">256</span>>(<span class="string">"orders"</span>)?;</span>
 
-<span class="code-line" data-related-id="reader">  <span class="comment">// Read events instantly</span></span>
-<span class="code-line" data-related-id="reader">  <span class="keyword">for</span> event <span class="keyword">in</span> db.<span class="function">iter</span>() {</span>
-<span class="code-line" data-related-id="reader">      <span class="function">println!</span>(<span class="string">"Event: {:?}"</span>, event);</span>
-<span class="code-line" data-related-id="reader">  }</span>
+<span class="code-line" data-related-id="stream">  <span class="comment">// Append events (zero-copy on read)</span></span>
+<span class="code-line" data-related-id="stream">  <span class="keyword">let</span> (seq, _) = stream.<span class="function">append</span>(<span class="type">StreamId</span>(<span class="number">1</span>), &event)?;</span>
+
+<span class="code-line" data-related-id="indexer">  <span class="comment">// Read back instantly</span></span>
+<span class="code-line" data-related-id="indexer">  <span class="keyword">let</span> bytes = stream.<span class="function">get_bytes</span>(<span class="type">StreamId</span>(<span class="number">1</span>), seq)?;</span>
+
   <span class="keyword">Ok</span>(())
 }</code></pre>
         </div>
@@ -179,7 +181,7 @@ import '../styles/css/sections/code-window.css';
         if (c === comp || c.getAttribute('data-id') === id) {
           c.classList.add('highlight');
         } else if (c.contains(comp)) {
-          // If this component contains the hovered one (e.g. Engine contains Writer),
+          // If this component contains the hovered one (e.g. Engine contains Stream),
           // do NOT dim it, but don't highlight it either.
           // This ensures the parent doesn't fade out, which would fade out the child too.
         } else {

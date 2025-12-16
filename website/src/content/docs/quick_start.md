@@ -11,12 +11,12 @@ Add `varvedb` to your `Cargo.toml`. We also recommend `rkyv` for defining your e
 
 ```toml
 [dependencies]
-varvedb = "0.2.1"
-rkyv = { version = "0.8", features = ["bytecheck", "little_endian"] }
-tempfile = "3" # Optional: mostly for tests/examples
+varvedb = "0.3"
+rkyv = { version = "0.8", features = ["bytecheck"] }
+tempfile = "3" # Optional: for temporary test databases
 ```
 
-## 2. define Your Schema
+## 2. Define Your Schema
 
 VarveDB is schema-agnostic but relies on `rkyv` for zero-copy deserialization. Define your events as standard Rust structs.
 
@@ -25,84 +25,122 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 #[derive(Archive, Serialize, Deserialize, Debug)]
 #[rkyv(derive(Debug))]
-#[repr(C)]
-struct InventoryEvent {
-    pub item_id: u32,
-    pub action: String, // e.g., "StockAdded"
+struct OrderPlaced {
+    pub order_id: u64,
+    pub product: String,
     pub quantity: u32,
+    pub amount: u64,
 }
 ```
 
 > [!NOTE]
-> `#[repr(C)]` and `#[rkyv(derive(Debug))]` are recommended for ensuring consistent memory layout and debugging capabilities for the zero-copy view.
+> The `#[rkyv(derive(Debug))]` attribute enables debugging support for the archived (zero-copy) view of your event.
 
 ## 3. The "Hello World"
 
-Here is a complete, runnable example that opens a database, appends an event, and reads it back.
+Here is a complete, runnable example that opens a database, appends an event, and reads it back using zero-copy access.
 
 ```rust
 use rkyv::{Archive, Deserialize, Serialize};
-use varvedb::engine::{Reader, Writer};
-use varvedb::storage::{Storage, StorageConfig};
+use varvedb::{Varve, StreamId, StreamSequence};
 use tempfile::tempdir;
 
-// 1. Define your Event (Schema)
-#[derive(Archive, Serialize, Deserialize, Debug)]
+// 1. Define your Event Schema
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
 #[rkyv(derive(Debug))]
-#[repr(C)]
-struct InventoryEvent {
-    item_id: u32,
-    action: String,
+struct OrderPlaced {
+    order_id: u64,
+    product: String,
     quantity: u32,
+    amount: u64,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 2. Setup Configuration
-    // In a real app, use a persistent path like "./data/db.mdb"
-    let dir = tempdir()?; 
-    let config = StorageConfig {
-        path: dir.path().join("inventory.mdb"),
-        ..Default::default()
-    };
+    // 2. Initialize the Database
+    // In production, use a persistent path like "./data/varvedb"
+    let dir = tempdir()?;
+    let mut varve = Varve::new(dir.path())?;
 
-    // 3. Initialize the Engine
-    // Storage handles the LMDB environment and background threads.
-    let storage = Storage::open(config)?;
-    let mut writer = Writer::new(storage.clone());
+    // 3. Create a Typed Stream
+    // Stream names organize related events (e.g., "orders", "users")
+    // The buffer size (1024) should be larger than your largest event
+    let mut stream = varve.stream::<OrderPlaced, 1024>("orders")?;
 
     // 4. Append an Event
-    // We are creating a stream for Product #1 (stream_id=1)
-    // We expect this to be the 1st event in the stream (version=1)
-    let event = InventoryEvent {
-        item_id: 1,
-        action: "StockAdded".to_string(),
-        quantity: 100,
+    // Events are grouped by StreamId (e.g., a specific order, user, etc.)
+    // Multiple events with the same StreamId form a logical stream
+    let event = OrderPlaced {
+        order_id: 12345,
+        product: "Laptop".to_string(),
+        quantity: 1,
+        amount: 99900, // cents
     };
     
-    // append(stream_id, expected_version, event)
-    let seq_num = writer.append(1, 1, event)?;
-    println!("Appended event with Global Sequence Number: {}", seq_num);
+    let (stream_seq, global_seq) = stream.append(StreamId(1), &event)?;
+    println!("✓ Appended event at stream sequence {}, global sequence {}", 
+             stream_seq.0, global_seq.0);
 
-    // 5. Read it back
-    // The Reader provides zero-copy access to the data.
-    let reader = Reader::<InventoryEvent>::new(storage.clone());
-    let txn = storage.env.read_txn()?;
+    // 5. Read it Back (Zero-Copy)
+    // Create a reader for efficient, cloneable access
+    let mut reader = stream.reader();
     
-    // Fetch by Global Sequence Number
-    if let Some(view) = reader.get(&txn, seq_num)? {
-        // 'view' is a zero-copy pointer to the data on disk.
-        // It behaves exactly like a reference to your struct.
-        println!("Read Event: {:?}", view);
-        assert_eq!(view.quantity, 100);
+    // Get the archived (zero-copy) view
+    if let Some(archived_event) = reader.get_archived(StreamId(1), stream_seq)? {
+        // 'archived_event' is a reference directly into the memory-mapped file
+        // Access fields as if it were a normal struct reference
+        println!("✓ Read event: Order #{}, Product: {}, Qty: {}", 
+                 archived_event.order_id,
+                 archived_event.product,
+                 archived_event.quantity);
+        
+        assert_eq!(archived_event.order_id, 12345);
+        assert_eq!(archived_event.product.as_str(), "Laptop");
     }
+
+    // 6. Batch Append for High Throughput
+    // Batching amortizes transaction overhead (700x faster!)
+    let more_events: Vec<OrderPlaced> = (0..100)
+        .map(|i| OrderPlaced {
+            order_id: 12346 + i,
+            product: format!("Product-{}", i),
+            quantity: 1,
+            amount: 1000 * (i + 1),
+        })
+        .collect();
+    
+    let results = stream.append_batch(StreamId(2), &more_events)?;
+    println!("✓ Batch appended {} events", results.len());
+
+    // 7. Iterate Over a Stream
+    // Read all events for a specific StreamId
+    let iter = reader.iter_stream(StreamId(2), None)?;
+    let events = iter.collect_bytes()?;
+    println!("✓ Stream contains {} events", events.len());
 
     Ok(())
 }
 ```
 
+## Key Concepts
+
+### Streams
+Events are organized into **logical streams** by name (e.g., "orders", "users"):
+- Each stream can contain multiple **StreamIds** (individual entities).
+- Within a StreamId, events are ordered by **StreamSequence** (0, 1, 2...).
+
+### Global Sequence
+All events across all streams are assigned a **GlobalSequence** number, providing total ordering for replication or audit logs.
+
+### Zero-Copy Reads
+When you call `reader.get_archived()`, VarveDB returns a reference directly into the memory-mapped database file. No deserialization or allocation occurs, making reads extremely fast (<1µs).
+
+### Batch Writes
+Use `append_batch()` to write multiple events in a single transaction. This achieves **165,000+ events/sec** by amortizing the fsync cost.
+
 ## Next Steps
 
-Now that you have the basics running, explore how to build real-world applications.
+Now that you have the basics running, explore how to build real-world applications:
 
-*   [**Core Concepts**](/docs/concepts): Understand architecture, streams, and optimistic concurrency.
-*   [**User Guides**](/docs/guides): Learn how to handle migrations, concurrency, and backups.
+*   [**Core Concepts**](/docs/concepts): Understand architecture, streams, and data organization.
+*   [**Performance**](/docs/performance): Learn about throughput characteristics and optimization strategies.
+*   [**User Guides**](/docs/guides): Advanced topics like concurrency and processing.

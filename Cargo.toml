@@ -2,6 +2,7 @@
 name = "varvedb"
 version = "0.3.0"
 edition = "2021"
+autobenches = false
 license = "MPL-2.0"
 authors = ["Matheus Cardoso <varvedb@matheus.sbs>"]
 description = "A high-performance, embedded, append-only event store for Rust."
@@ -26,48 +27,39 @@ exclude = [
 
 [features]
 default = []
-serde = ["dep:serde", "zeroize/serde"]
+log = ["tracing", "tracing-subscriber"]
+log_trace = ["log"]
+log_debug = ["log"]
+log_info = ["log"]
+log_warn = ["log"]
+log_error = ["log"]
+debug_eprintln = []
 
 [dependencies]
-aes-gcm = "0.10.3"
-bytemuck = "1.14.3"
-bytes = "1.5.0"
-heed = "0.20.5"
-libc = "0.2.178"
-log = "0.4.29"
-prometheus = "0.14.0"
-rand = "0.8.5"
-rkyv = { version = "0.8", features = ["bytecheck", "little_endian"] }
-serde = { version = "1.0.228", features = ["derive"], optional = true }
-sha2 = "0.10.9"
-thiserror = "1.0.57"
-tokio = { version = "1.36.0", features = ["full"] }
-tracing = { version = "0.1.43", features = ["log", "release_max_level_info"] }
-uuid = { version = "1.7.0", features = ["v4", "serde"] }
-zeroize = { version = "1.7", features = ["derive"] }
+heed = "0.22.0"
+ouroboros = "0.18.5"
+rkyv = "0.8.12"
+thiserror = "2.0.17"
+tracing = { version = "0.1", features = [
+    "log",
+    "release_max_level_info",
+], optional = true }
+tracing-subscriber = { version = "0.3.22", features = [
+    "env-filter",
+], optional = true }
 
 [dev-dependencies]
 tempfile = "3.10.0"
 criterion = "0.5.1"
 proptest = "1.4.0"
 bytecheck = "0.8.2"
+rstest = "0.26.1"
+hdrhistogram = "7.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.8"
 
 [[bench]]
-name = "write_bench"
+name = "varvedb_benchmarks"
 harness = false
-
-[[bench]]
-name = "read_bench"
-harness = false
-
-[[bench]]
-name = "concurrent_bench"
-harness = false
-
-[[bench]]
-name = "payload_bench"
-harness = false
-
-[[bench]]
-name = "encryption_bench"
-harness = false
+path = "benches/main.rs"

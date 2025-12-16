@@ -1,0 +1,203 @@
+name: Benchmarks
+
+on:
+  # Manual trigger via GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: 'Baseline to compare against (leave empty for no comparison)'
+        required: false
+        default: ''
+      save_baseline:
+        description: 'Save results as this baseline name'
+        required: false
+        default: ''
+      benchmark_filter:
+        description: 'Filter benchmarks (e.g., "write", "read", "stream")'
+        required: false
+        default: ''
+
+  # Optional: Run on PRs with benchmark label
+  pull_request:
+    types: [labeled]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Reduce noise in benchmark output
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    # Only run on manual dispatch or when 'benchmark' label is added
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.label.name == 'benchmark')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y liblmdb-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+            ${{ runner.os }}-cargo-
+
+      - name: Download baseline (if comparing)
+        if: inputs.baseline != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: criterion-${{ inputs.baseline }}
+          path: target/criterion
+        continue-on-error: true
+
+      - name: Build benchmarks
+        run: cargo build --release --benches
+
+      - name: Run benchmarks
+        run: |
+          BENCH_ARGS=""
+          
+          # Add filter if specified
+          if [ -n "${{ inputs.benchmark_filter }}" ]; then
+            BENCH_ARGS="${BENCH_ARGS} ${{ inputs.benchmark_filter }}"
+          fi
+          
+          # Add baseline comparison if specified
+          if [ -n "${{ inputs.baseline }}" ]; then
+            BENCH_ARGS="${BENCH_ARGS} --baseline ${{ inputs.baseline }}"
+          fi
+          
+          # Save baseline if specified
+          if [ -n "${{ inputs.save_baseline }}" ]; then
+            BENCH_ARGS="${BENCH_ARGS} --save-baseline ${{ inputs.save_baseline }}"
+          fi
+          
+          echo "Running: cargo bench --bench main -- ${BENCH_ARGS}"
+          cargo bench --bench main -- ${BENCH_ARGS}
+
+      - name: Upload criterion results
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-${{ inputs.save_baseline || github.sha }}
+          path: |
+            target/criterion/
+          retention-days: 90
+
+      - name: Upload percentile results
+        uses: actions/upload-artifact@v4
+        with:
+          name: percentiles-${{ github.sha }}
+          path: |
+            target/criterion/percentiles.json
+            target/criterion/percentiles.csv
+          retention-days: 90
+
+      - name: Generate benchmark summary
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Percentile Results (nanoseconds)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "target/criterion/percentiles.json" ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat target/criterion/percentiles.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No percentile results found." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **HTML Report**: Download the criterion artifact and open \`report/index.html\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Percentiles JSON**: \`target/criterion/percentiles.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Percentiles CSV**: \`target/criterion/percentiles.csv\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let body = '## Benchmark Results\n\n';
+            
+            try {
+              const percentiles = fs.readFileSync('target/criterion/percentiles.json', 'utf8');
+              const data = JSON.parse(percentiles);
+              
+              body += '### Key Percentiles (nanoseconds)\n\n';
+              body += '| Benchmark | p50 | p90 | p99 |\n';
+              body += '|-----------|-----|-----|-----|\n';
+              
+              // Show first 10 benchmarks
+              const names = Object.keys(data).sort().slice(0, 10);
+              for (const name of names) {
+                const r = data[name];
+                body += `| ${name} | ${r.p50} | ${r.p90} | ${r.p99} |\n`;
+              }
+              
+              if (Object.keys(data).length > 10) {
+                body += `\n*...and ${Object.keys(data).length - 10} more benchmarks*\n`;
+              }
+            } catch (e) {
+              body += 'Percentile results not available.\n';
+            }
+            
+            body += '\n\nSee the [Actions run](' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId + ') for full results.';
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+  # Optional: Compare against main branch
+  compare:
+    name: Compare with Main
+    runs-on: ubuntu-latest
+    needs: benchmark
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Download PR benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: percentiles-${{ github.sha }}
+          path: pr-results
+
+      - name: Download main baseline (if exists)
+        uses: actions/download-artifact@v4
+        with:
+          name: criterion-main
+          path: main-results
+        continue-on-error: true
+
+      - name: Compare results
+        if: success()
+        run: |
+          echo "## Comparison with Main Branch" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "main-results/percentiles.json" ] && [ -f "pr-results/percentiles.json" ]; then
+            echo "Comparison available. Check artifacts for detailed diff." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No main baseline available for comparison." >> $GITHUB_STEP_SUMMARY
+            echo "Run benchmarks on main with \`save_baseline: main\` to enable comparisons." >> $GITHUB_STEP_SUMMARY
+          fi
+
