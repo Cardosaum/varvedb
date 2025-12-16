@@ -1,6 +1,6 @@
 [package]
 name = "varvedb"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 autobenches = false
 license = "MPL-2.0"
