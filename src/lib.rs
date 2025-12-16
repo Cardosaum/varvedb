@@ -6,17 +6,26 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
+//! VarveDB - A high-performance, embedded, append-only event store for Rust.
+
+// Module declarations - order matters for dependencies
 pub mod constants;
-pub mod types;
 #[macro_use]
 pub mod utils;
+pub mod config;
+pub mod error;
+pub mod event;
+pub mod global;
 pub mod log;
 pub mod stream;
+pub mod types;
 pub mod varve;
 
-// Re-export main types for convenience
-pub use stream::{Stream, StreamReader};
+// Re-export main types for convenience and backward compatibility
+pub use config::VarveConfig;
+pub use error::{Error, Result};
+pub use event::GlobalEvent;
+pub use global::{GlobalIterator, GlobalReader};
+pub use stream::{HighSerializer, LowSerializer, Stream, StreamIterator, StreamReader};
 pub use types::{GlobalSequence, StreamId, StreamKey, StreamSequence};
-pub use varve::{
-    Error, GlobalEvent, GlobalReader, HighSerializer, LowSerializer, Varve, VarveConfig,
-};
+pub use varve::Varve;

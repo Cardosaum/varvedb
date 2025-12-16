@@ -6,6 +6,8 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
+//! Logging functionality for VarveDB.
+
 // ---------------------------------------- //
 // Re-Exports
 // ---------------------------------------- //
@@ -29,25 +31,11 @@ pub mod macros {
 }
 
 // ---------------------------------------- //
-// Error
+// Log Initialization
 // ---------------------------------------- //
 
 #[cfg(feature = "log")]
-#[derive(thiserror::Error, Debug)]
-pub enum LogError {
-    #[error(transparent)]
-    SetLogger(#[from] tracing_subscriber::util::TryInitError),
-}
-
-#[cfg(feature = "log")]
-pub type LogResult<T> = Result<T, LogError>;
-
-// ---------------------------------------- //
-// Log
-// ---------------------------------------- //
-
-#[cfg(feature = "log")]
-pub fn init(filter: impl AsRef<str>) -> LogResult<()> {
+pub fn init(filter: impl AsRef<str>) -> crate::error::LogResult<()> {
     use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
     let env_filter = EnvFilter::try_new(filter.as_ref()).unwrap_or_else(|_| EnvFilter::new("info"));

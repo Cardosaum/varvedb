@@ -6,51 +6,23 @@
 // v. 2.0. If a copy of the MPL was not distributed with this file, You can
 // obtain one at http://mozilla.org/MPL/2.0/.
 
+//! Core VarveDB database handle.
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use heed::{Env, EnvOpenOptions, Error as HeedError, RoTxn, WithTls};
+use heed::{Env, EnvOpenOptions};
 
+use crate::config::VarveConfig;
 use crate::constants;
+use crate::error::Result;
+use crate::global::GlobalReader;
 use crate::stream::{Stream, StreamCore};
-use crate::types::{
-    GlobalEventRecord, GlobalEventsDb, GlobalSequence, StreamId, StreamIndexDb, StreamMetaDb,
-    StreamSequence,
-};
+use crate::types::{GlobalEventsDb, GlobalSequence, StreamIndexDb, StreamMetaDb};
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error(transparent)]
-    Heed(#[from] HeedError),
-    #[error(transparent)]
-    Rkyv(#[from] rkyv::rancor::Error),
-    #[error(transparent)]
-    Stream(#[from] crate::stream::StreamError),
-    #[error("Database not found: {0}")]
-    DatabaseNotFound(String),
-    #[error("Stream already exists: {0}")]
-    StreamAlreadyExists(String),
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct VarveConfig {
-    pub max_dbs: u32,
-    pub map_size: usize,
-}
-
-impl Default for VarveConfig {
-    fn default() -> Self {
-        Self {
-            max_dbs: constants::DEFAULT_MAX_DBS,
-            map_size: constants::DEFAULT_MAP_SIZE,
-        }
-    }
-}
-
-/// Per-stream database handles
+/// Per-stream database handles.
 struct StreamDbs {
     index_db: StreamIndexDb,
     meta_db: StreamMetaDb,
@@ -71,11 +43,13 @@ pub struct Varve {
 }
 
 impl Varve {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, Error> {
+    /// Create a new VarveDB instance at the specified path with default configuration.
+    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         Self::with_config(path, VarveConfig::default())
     }
 
-    pub fn with_config(path: impl AsRef<Path>, config: VarveConfig) -> Result<Self, Error> {
+    /// Create a new VarveDB instance at the specified path with custom configuration.
+    pub fn with_config(path: impl AsRef<Path>, config: VarveConfig) -> Result<Self> {
         let env = unsafe {
             EnvOpenOptions::new()
                 .read_txn_with_tls()
@@ -109,7 +83,7 @@ impl Varve {
         })
     }
 
-    /// Get the current next global sequence
+    /// Get the current next global sequence.
     pub fn next_global_seq(&self) -> GlobalSequence {
         GlobalSequence(self.next_global_seq.load(Ordering::Relaxed))
     }
@@ -122,7 +96,7 @@ impl Varve {
     /// # Type Parameters
     /// - `T`: The event payload type (must implement rkyv serialization)
     /// - `N`: The serialization buffer size (must be large enough for your events)
-    pub fn stream<T, const N: usize>(&mut self, name: &str) -> Result<Stream<T, N>, Error> {
+    pub fn stream<T, const N: usize>(&mut self, name: &str) -> Result<Stream<T, N>> {
         // Get or create the stream databases
         let (index_db, meta_db) = self.get_or_create_stream_dbs(name)?;
 
@@ -138,11 +112,8 @@ impl Varve {
         Ok(Stream::new(stream_core))
     }
 
-    /// Get or create stream databases (index + meta)
-    fn get_or_create_stream_dbs(
-        &mut self,
-        name: &str,
-    ) -> Result<(StreamIndexDb, StreamMetaDb), Error> {
+    /// Get or create stream databases (index + meta).
+    fn get_or_create_stream_dbs(&mut self, name: &str) -> Result<(StreamIndexDb, StreamMetaDb)> {
         if let Some(dbs) = self.stream_dbs.get(name) {
             return Ok((dbs.index_db, dbs.meta_db));
         }
@@ -180,7 +151,7 @@ impl Varve {
         Ok((index_db, meta_db))
     }
 
-    /// Create a reader for global event iteration
+    /// Create a reader for global event iteration.
     pub fn global_reader(&self) -> GlobalReader {
         GlobalReader {
             env: self.env.clone(),
@@ -190,140 +161,10 @@ impl Varve {
     }
 }
 
-/// A reader for iterating events across all streams in global order.
-pub struct GlobalReader {
-    env: Env,
-    global_db: GlobalEventsDb,
-    scratch: rkyv::util::AlignedVec<16>,
-}
-
-impl GlobalReader {
-    /// Get a single event by global sequence
-    pub fn get(&mut self, global_seq: GlobalSequence) -> Result<Option<GlobalEvent>, Error> {
-        let rtxn = self.env.read_txn()?;
-        let bytes = self.global_db.get(&rtxn, &global_seq.0)?;
-        match bytes {
-            Some(b) => {
-                self.scratch.clear();
-                self.scratch.extend_from_slice(b);
-                match GlobalEventRecord::from_bytes(&self.scratch) {
-                    Some(record) => Ok(Some(GlobalEvent {
-                        global_seq,
-                        stream_name: record.stream_name,
-                        stream_id: record.stream_id,
-                        stream_seq: record.stream_seq,
-                        payload: record.payload,
-                    })),
-                    None => Ok(None),
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Get raw bytes for an event by global sequence
-    pub fn get_bytes(&mut self, global_seq: GlobalSequence) -> Result<Option<&[u8]>, Error> {
-        let rtxn = self.env.read_txn()?;
-        let bytes = self.global_db.get(&rtxn, &global_seq.0)?;
-        match bytes {
-            Some(b) => {
-                self.scratch.clear();
-                self.scratch.extend_from_slice(b);
-                Ok(GlobalEventRecord::payload_from_bytes(&self.scratch))
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Iterate all events from a given global sequence
-    pub fn iter_from(&self, from: GlobalSequence) -> Result<GlobalIterator<'_>, Error> {
-        let rtxn = self.env.read_txn()?;
-        Ok(GlobalIterator {
-            db: self.global_db,
-            rtxn,
-            from: from.0,
-        })
-    }
-}
-
-impl Clone for GlobalReader {
-    fn clone(&self) -> Self {
-        Self {
-            env: self.env.clone(),
-            global_db: self.global_db,
-            scratch: rkyv::util::AlignedVec::new(),
-        }
-    }
-}
-
-/// A global event with all metadata
-#[derive(Debug, Clone)]
-pub struct GlobalEvent {
-    pub global_seq: GlobalSequence,
-    pub stream_name: String,
-    pub stream_id: StreamId,
-    pub stream_seq: StreamSequence,
-    pub payload: Vec<u8>,
-}
-
-/// Iterator over global events
-pub struct GlobalIterator<'a> {
-    db: GlobalEventsDb,
-    rtxn: RoTxn<'a, WithTls>,
-    from: u64,
-}
-
-impl<'a> GlobalIterator<'a> {
-    /// Collect all events as GlobalEvents
-    pub fn collect_all(self) -> Result<Vec<GlobalEvent>, Error> {
-        let mut results = Vec::new();
-        let iter = self.db.range(&self.rtxn, &(self.from..))?;
-        for item in iter {
-            let (seq, bytes) = item?;
-            if let Some(record) = GlobalEventRecord::from_bytes(bytes) {
-                results.push(GlobalEvent {
-                    global_seq: GlobalSequence(seq),
-                    stream_name: record.stream_name,
-                    stream_id: record.stream_id,
-                    stream_seq: record.stream_seq,
-                    payload: record.payload,
-                });
-            }
-        }
-        Ok(results)
-    }
-
-    /// Iterate and apply a function to each event
-    pub fn for_each<F>(self, mut f: F) -> Result<(), Error>
-    where
-        F: FnMut(GlobalEvent),
-    {
-        let iter = self.db.range(&self.rtxn, &(self.from..))?;
-        for item in iter {
-            let (seq, bytes) = item?;
-            if let Some(record) = GlobalEventRecord::from_bytes(bytes) {
-                f(GlobalEvent {
-                    global_seq: GlobalSequence(seq),
-                    stream_name: record.stream_name,
-                    stream_id: record.stream_id,
-                    stream_seq: record.stream_seq,
-                    payload: record.payload,
-                });
-            }
-        }
-        Ok(())
-    }
-}
-
-// =============================================================================
-// Re-export stream types
-// =============================================================================
-
-pub use crate::stream::{HighSerializer, LowSerializer, StreamError};
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{StreamId, StreamSequence};
     use rkyv::{Archive, Deserialize, Serialize};
     use tempfile::tempdir;
 
