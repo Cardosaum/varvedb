@@ -1,3 +1,8 @@
+---
+title: "Performance"
+description: "Benchmark results, performance characteristics, and optimization tips for VarveDB."
+---
+
 # Performance
 
 VarveDB delivers exceptional performance through its zero-copy architecture and memory-mapped storage. Real-world benchmarks demonstrate sub-microsecond reads and consistent write latency.

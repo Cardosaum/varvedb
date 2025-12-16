@@ -11,7 +11,7 @@ Add `varvedb` to your `Cargo.toml`. We also recommend `rkyv` for defining your e
 
 ```toml
 [dependencies]
-varvedb = "0.3"
+varvedb = "0.4"
 rkyv = { version = "0.8", features = ["bytecheck"] }
 tempfile = "3" # Optional: for temporary test databases
 ```
@@ -143,4 +143,3 @@ Now that you have the basics running, explore how to build real-world applicatio
 
 *   [**Core Concepts**](/docs/concepts): Understand architecture, streams, and data organization.
 *   [**Performance**](/docs/performance): Learn about throughput characteristics and optimization strategies.
-*   [**User Guides**](/docs/guides): Advanced topics like concurrency and processing.

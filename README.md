@@ -110,7 +110,7 @@ Based on benchmarks with MacBook Pro M2 and NVMe SSD:
 | **Sequential Read** | 1.4M ops/sec | **460 ns** |
 | **Stream Scan** (100K events) | 3.6M events/sec | 27.6 ms |
 
-See the [Performance documentation](https://docs.rs/varvedb) for detailed benchmarks and optimization tips.
+See the [Performance documentation](https://varvedb.org/docs/performance) for detailed benchmarks and optimization tips.
 
 ## Core Concepts
 
@@ -192,10 +192,10 @@ let iter = global_reader.iter_from(GlobalSequence(0))?;
 
 ## Documentation
 
-- **[Full Documentation](https://docs.rs/varvedb)**: Complete API reference and guides
-- **[Quick Start Guide](https://docs.rs/varvedb)**: Get up and running in 5 minutes
-- **[Core Concepts](https://docs.rs/varvedb)**: Understand architecture and data model
-- **[Performance Guide](https://docs.rs/varvedb)**: Optimization strategies and benchmarks
+- **[Full Documentation](https://docs.rs/varvedb)**: Complete API reference
+- **[Quick Start Guide](https://varvedb.org/docs/quick_start)**: Get up and running in 5 minutes
+- **[Core Concepts](https://varvedb.org/docs/concepts)**: Understand architecture and data model
+- **[Performance Guide](https://varvedb.org/docs/performance)**: Optimization strategies and benchmarks
 
 ## Requirements
 
