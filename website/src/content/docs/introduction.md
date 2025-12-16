@@ -10,7 +10,7 @@ Built on **LMDB** (Lightning Memory-Mapped Database) and **rkyv**, VarveDB is de
 ## Key Features
 
 *   **Zero-Copy Access**: Events are mapped directly from disk to memory using [rkyv](https://rkyv.org/), eliminating deserialization overhead for read operations.
-*   **Batch Writes**: Achieve 165,000+ events/sec by batching writes to amortize transaction overhead.
+*   **High-Throughput Writes**: Achieve 1M+ events/sec by batching writes to amortize transaction overhead.
 *   **Embedded Architecture**: Runs in-process with your application, removing the latency and operational complexity of external database servers.
 *   **Strongly Typed**: Enforce schema correctness at compile time with Rust types.
 *   **Memory-Mapped Storage**: Leverages OS page cache for automatic memory management and high-speed access.
@@ -25,7 +25,7 @@ VarveDB bridges this gap by providing:
 1.  **Speed**: By memory-mapping the database file, reading an event is as fast as reading from RAM (sub-microsecond latency).
 2.  **Simplicity**: No external clusters to manage. Just include it as a crate.
 3.  **Safety**: ACID transactions ensure that your event log is never corrupted, even in the event of power failure.
-4.  **Performance**: Batch writes deliver 165,000+ events/sec throughput on standard hardware.
+4.  **Performance**: Batch writes deliver 1M+ events/sec throughput on standard hardware.
 
 ## Use Cases
 
@@ -70,11 +70,11 @@ Continue to [Quick Start](/docs/quick_start) for a complete, runnable example.
 
 Based on benchmarks with MacBook Pro M2 and NVMe SSD:
 
-| Operation | Throughput | Latency (p50) |
+| Operation | Throughput | Latency |
 |-----------|-----------|---------------|
-| **Batch Write** (1000 events) | 165,000 ops/sec | 6.0 ms |
-| **Sequential Read** | 1.4M ops/sec | **460 ns** |
-| **Stream Scan** (100K events) | 3.6M events/sec | 27.6 ms |
+| **Batch Write** (1M events) | 1.02M events/sec | **978 ns/event** |
+| **Sequential Read** (1M events) | 2.28M events/sec | **438 ns/event** |
+| **Stream Iterator** (8M events) | 2.92M events/sec | **342 ns/event** |
 
 See [Performance](/docs/performance) for detailed benchmarks and optimization tips.
 

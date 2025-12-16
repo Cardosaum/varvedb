@@ -10,7 +10,7 @@ It is designed for event sourcing, offering strongly-typed events, zero-copy des
 ## Features
 
 - **Zero-Copy Access**: Events are mapped directly from disk to memory using [rkyv](https://rkyv.org/), eliminating deserialization overhead for read operations.
-- **Batch Writes**: Achieve 165,000+ events/sec by batching writes to amortize transaction overhead.
+- **High-Throughput Writes**: Achieve 1M+ events/sec with batch writes to amortize transaction overhead.
 - **Embedded Architecture**: Runs in-process with your application, removing the latency and operational complexity of external database servers.
 - **Strongly Typed**: Enforce schema correctness at compile time with Rust types.
 - **Memory-Mapped Storage**: Leverages OS page cache for automatic memory management and high-speed access.
@@ -104,11 +104,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Based on benchmarks with MacBook Pro M2 and NVMe SSD:
 
-| Operation | Throughput | Latency (p50) |
+| Operation | Throughput | Latency |
 |-----------|-----------|---------------|
-| **Batch Write** (1000 events) | 165,000 ops/sec | 6.0 ms |
-| **Sequential Read** | 1.4M ops/sec | **460 ns** |
-| **Stream Scan** (100K events) | 3.6M events/sec | 27.6 ms |
+| **Batch Write** (1M events) | 1.02M events/sec | **978 ns/event** |
+| **Sequential Read** (1M events) | 2.28M events/sec | **438 ns/event** |
+| **Stream Iterator** (8M events) | 2.92M events/sec | **342 ns/event** |
 
 See the [Performance documentation](https://varvedb.org/docs/performance) for detailed benchmarks and optimization tips.
 
@@ -126,7 +126,7 @@ All events across all streams are assigned a **GlobalSequence** number, providin
 When you call `reader.get_archived()`, VarveDB returns a reference directly into the memory-mapped database file. No deserialization or allocation occurs, making reads extremely fast (<1µs).
 
 ### Batch Writes
-Use `append_batch()` to write multiple events in a single transaction. This achieves **165,000+ events/sec** by amortizing the fsync cost.
+Use `append_batch()` to write multiple events in a single transaction. This achieves **1M+ events/sec** by amortizing the fsync cost across many events.
 
 ## Architecture
 

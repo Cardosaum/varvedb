@@ -135,7 +135,7 @@ All events across all streams are assigned a **GlobalSequence** number, providin
 When you call `reader.get_archived()`, VarveDB returns a reference directly into the memory-mapped database file. No deserialization or allocation occurs, making reads extremely fast (<1µs).
 
 ### Batch Writes
-Use `append_batch()` to write multiple events in a single transaction. This achieves **165,000+ events/sec** by amortizing the fsync cost.
+Use `append_batch()` to write multiple events in a single transaction. This achieves **1M+ events/sec** by amortizing the fsync cost across many events.
 
 ## Next Steps
 
