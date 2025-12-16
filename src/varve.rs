@@ -35,6 +35,7 @@ pub enum Error {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VarveConfig {
     pub max_dbs: u32,
     pub map_size: usize,
