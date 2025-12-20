@@ -275,12 +275,12 @@ VarveDB is under active development. The core engine is functional and benchmark
 - ✅ Stream organization
 - ✅ Global iteration
 - ✅ Comprehensive benchmark suite
+- ✅ Async notifications (write watcher)
 
 **Planned Features:**
 - 🚧 Optimistic Concurrency Control (ExpectedVersion)
 - 🚧 Authenticated encryption at rest
 - 🚧 Snapshot exports for backups
-- ✅ Async notifications (write watcher)
 
 ## Links
 
