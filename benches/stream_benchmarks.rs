@@ -226,9 +226,10 @@ pub fn bench_chunked_iteration(c: &mut Criterion, recorder: &PercentileRecorder)
                     // Simulate pagination by collecting only chunk_size events
                     let mut count = 0;
                     let result = iter.for_each(|_seq, _bytes| {
-                        count += 1;
-                        if count >= size {
-                            return; // Early exit isn't possible with for_each, but we track count
+                        // Early exit isn't possible with `for_each`, but we can avoid doing
+                        // additional work once we've "filled" the page.
+                        if count < size {
+                            count += 1;
                         }
                     });
 
