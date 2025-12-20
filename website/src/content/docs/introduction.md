@@ -15,6 +15,7 @@ Built on **LMDB** (Lightning Memory-Mapped Database) and **rkyv**, VarveDB is de
 *   **Strongly Typed**: Enforce schema correctness at compile time with Rust types.
 *   **Memory-Mapped Storage**: Leverages OS page cache for automatic memory management and high-speed access.
 *   **ACID Transactions**: Full crash safety and data integrity guarantees via LMDB.
+*   **Async Notifications (optional)**: Runtime-agnostic write notifications so async readers can await new commits without polling (enable the `notify` feature).
 
 ## Why VarveDB?
 
@@ -60,7 +61,7 @@ let mut stream = varve.stream::<MyEvent, 256>("events")?;
 stream.append(StreamId(1), &event)?;
 
 // Read with zero-copy
-let reader = stream.reader();
+let mut reader = stream.reader();
 let archived = reader.get_archived(StreamId(1), seq)?;
 ```
 
@@ -88,12 +89,12 @@ VarveDB is under active development. The core engine is functional and benchmark
 - ✅ Batch writes
 - ✅ Stream organization
 - ✅ Global iteration
+- ✅ Async notifications (optional `notify` feature)
 - ✅ Comprehensive benchmark suite
 
 **Planned Features:**
 - 🚧 Optimistic Concurrency Control (ExpectedVersion)
 - 🚧 Authenticated encryption at rest
 - 🚧 Snapshot exports for backups
-- 🚧 Reactive subscriptions (watch channels)
 
 We welcome feedback and contributions! See the [GitHub repository](https://github.com/Cardosaum/varvedb) for more information.

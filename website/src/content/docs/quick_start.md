@@ -16,6 +16,13 @@ rkyv = { version = "0.8", features = ["bytecheck"] }
 tempfile = "3" # Optional: for temporary test databases
 ```
 
+> [!TIP]
+> If your readers run in an async context and you want them to **await new writes without polling**, enable the optional `notify` feature:
+
+```toml
+varvedb = { version = "0.4", features = ["notify"] }
+```
+
 ## 2. Define Your Schema
 
 VarveDB is schema-agnostic but relies on `rkyv` for zero-copy deserialization. Define your events as standard Rust structs.
@@ -143,3 +150,36 @@ Now that you have the basics running, explore how to build real-world applicatio
 
 *   [**Core Concepts**](/docs/concepts): Understand architecture, streams, and data organization.
 *   [**Performance**](/docs/performance): Learn about throughput characteristics and optimization strategies.
+
+## Optional: Async Notifications (notify feature)
+
+VarveDB is runtime-agnostic and does not require Tokio. If your readers run in an async context, you can enable the `notify` feature to get a `WriteWatcher` handle that can `await` new commits efficiently.
+
+```rust
+use varvedb::{GlobalSequence, Varve};
+
+// Enable with: varvedb = { version = "0.4", features = ["notify"] }
+async fn tail_global_log(mut varve: Varve) -> varvedb::Result<()> {
+    let watcher = varve.watcher();
+    let mut cursor = GlobalSequence(0);
+
+    loop {
+        // Always read from LMDB for the actual data
+        let reader = varve.global_reader();
+        let iter = reader.iter_from(cursor)?;
+        let events = iter.collect_all()?;
+
+        if events.is_empty() {
+            // No new events: efficiently wait for the committed watermark to advance
+            cursor = watcher.wait_for_global_seq(cursor).await;
+            continue;
+        }
+
+        // Process events...
+        cursor = GlobalSequence(events.last().unwrap().global_seq.0 + 1);
+    }
+}
+```
+
+> [!NOTE]
+> `wait_for_global_seq()` waits for the committed watermark to advance. It’s a signal, not the data itself—always query LMDB to fetch events (using `iter_from` naturally handles any gaps).

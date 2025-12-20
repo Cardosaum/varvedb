@@ -22,7 +22,37 @@ import '@fontsource/outfit/800.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/700.css';
 
-const { title = "VarveDB - Institutional Grade Event Store", description = "A high-performance, embedded, append-only event store for Rust." } = Astro.props;
+import fs from 'node:fs';
+
+const {
+  title = "VarveDB - Institutional Grade Event Store",
+  description = "A high-performance, embedded, append-only event store for Rust.",
+} = Astro.props;
+
+// Best-effort: read the crate version from the repo root Cargo.toml at build time.
+// This keeps the website metadata in sync with releases without manual updates.
+let softwareVersion = '0.0.0';
+try {
+  const cargoTomlUrl = new URL('../../../Cargo.toml', import.meta.url);
+  const cargoToml = fs.readFileSync(cargoTomlUrl, 'utf8');
+  const match = cargoToml.match(/^\s*version\s*=\s*"(.*?)"\s*$/m);
+  if (match?.[1]) softwareVersion = match[1];
+} catch {
+  // Ignore; keep fallback.
+}
+
+const schemaOrg = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "VarveDB",
+  operatingSystem: "Any (Rust)",
+  applicationCategory: "Database",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  description: "A high-performance, embedded, append-only event store for Rust.",
+  softwareVersion,
+  url: "https://varvedb.com",
+  author: { "@type": "Person", name: "VarveDB Contributors" },
+};
 ---
 
 <!doctype html>
@@ -40,25 +70,7 @@ const { title = "VarveDB - Institutional Grade Event Store", description = "A hi
     <meta name="twitter:card" content="summary_large_image" />
 
     <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "VarveDB",
-        "operatingSystem": "Any (Rust)",
-        "applicationCategory": "Database",
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        },
-        "description": "A high-performance, embedded, append-only event store for Rust.",
-        "softwareVersion": "0.0.0", 
-        "url": "https://varvedb.com",
-        "author": {
-          "@type": "Person",
-          "name": "VarveDB Contributors"
-        }
-      }
+      {JSON.stringify(schemaOrg)}
     </script>
   </head>
   <body>
@@ -116,7 +128,7 @@ const { title = "VarveDB - Institutional Grade Event Store", description = "A hi
             </div>
           </div>
           <div class="copyright">
-            &copy; 2025 VarveDB. Open source under MIT/Apache-2.0.
+            &copy; 2025 VarveDB. Open source under MPL-2.0.
           </div>
         </div>
       </footer>

@@ -123,8 +123,8 @@ This eliminates concurrency bugs without runtime locks.
 Read operations use shared references and are lock-free:
 
 ```rust
-let reader1 = stream.reader(); // Cloneable
-let reader2 = reader1.clone();  // Independent readers
+let mut reader1 = stream.reader(); // Cloneable
+let mut reader2 = reader1.clone();  // Independent readers
 
 // Both can read concurrently
 let data1 = reader1.get_archived(StreamId(1), seq)?;
@@ -132,6 +132,15 @@ let data2 = reader2.get_archived(StreamId(2), seq)?;
 ```
 
 Multiple readers can access the database simultaneously without blocking writes (thanks to LMDB's MVCC).
+
+### Waiting for new writes (optional)
+If you’re building projections or tailing the log in an async context, enable the `notify` feature to get a runtime-agnostic `WriteWatcher` you can await instead of polling:
+
+```toml
+varvedb = { version = "0.4", features = ["notify"] }
+```
+
+See [Async Notifications](/docs/notifications) for patterns and semantics.
 
 ## Memory-Mapped I/O
 
