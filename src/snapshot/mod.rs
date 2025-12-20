@@ -14,6 +14,7 @@
 //! VarveDB does not compute snapshots. User code owns state computation and
 //! decides when to save; VarveDB provides storage, lookup, and retention helpers.
 
+mod advice;
 mod codecs;
 mod keys;
 mod reader;

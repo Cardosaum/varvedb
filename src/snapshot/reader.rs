@@ -59,19 +59,13 @@ impl SnapshotReader {
     ) -> Result<Option<StreamSequence>> {
         let scope_key = encode_stream_scope_key(stream_name, stream_id);
         let rtxn = self.env.read_txn()?;
-        Ok(self
-            .latest_db
-            .get(&rtxn, &scope_key)?
-            .map(StreamSequence))
+        Ok(self.latest_db.get(&rtxn, &scope_key)?.map(StreamSequence))
     }
 
     pub fn latest_global_cursor(&self, projection_name: &str) -> Result<Option<GlobalSequence>> {
         let scope_key = encode_global_scope_key(projection_name);
         let rtxn = self.env.read_txn()?;
-        Ok(self
-            .latest_db
-            .get(&rtxn, &scope_key)?
-            .map(GlobalSequence))
+        Ok(self.latest_db.get(&rtxn, &scope_key)?.map(GlobalSequence))
     }
 
     /// Load latest snapshot bytes for a stream scope.
@@ -81,9 +75,8 @@ impl SnapshotReader {
         stream_id: StreamId,
     ) -> Result<Option<(StreamSequence, &[u8])>> {
         let scope_key = encode_stream_scope_key(stream_name, stream_id);
-        self.load_latest_by_scope_key(&scope_key).map(|opt| {
-            opt.map(|(cursor, bytes)| (StreamSequence(cursor), bytes))
-        })
+        self.load_latest_by_scope_key(&scope_key)
+            .map(|opt| opt.map(|(cursor, bytes)| (StreamSequence(cursor), bytes)))
     }
 
     /// Load latest snapshot bytes for a global scope.
@@ -92,9 +85,8 @@ impl SnapshotReader {
         projection_name: &str,
     ) -> Result<Option<(GlobalSequence, &[u8])>> {
         let scope_key = encode_global_scope_key(projection_name);
-        self.load_latest_by_scope_key(&scope_key).map(|opt| {
-            opt.map(|(cursor, bytes)| (GlobalSequence(cursor), bytes))
-        })
+        self.load_latest_by_scope_key(&scope_key)
+            .map(|opt| opt.map(|(cursor, bytes)| (GlobalSequence(cursor), bytes)))
     }
 
     /// Load latest snapshot bytes for a generic scope.
@@ -342,5 +334,3 @@ mod tests {
         assert_eq!(bytes, b"users@9");
     }
 }
-
-

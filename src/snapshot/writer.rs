@@ -8,11 +8,14 @@
 
 //! Snapshot write APIs.
 
+use std::marker::PhantomData;
+
 use rkyv::api::high::HighSerializer;
 use rkyv::ser::allocator::ArenaHandle;
 use rkyv::util::AlignedVec;
 
 use crate::error::Result;
+use crate::snapshot::advice::compute_advice;
 use crate::snapshot::keys::{
     decode_cursor_from_data_key, encode_data_key, encode_global_scope_key, encode_scope_key,
     encode_stream_scope_key,
@@ -24,198 +27,128 @@ use crate::snapshot::{
 };
 use crate::types::{GlobalSequence, StreamId, StreamSequence};
 
+pub trait CursorU64: Copy {
+    fn to_u64(self) -> u64;
+}
+
+impl CursorU64 for StreamSequence {
+    fn to_u64(self) -> u64 {
+        self.0
+    }
+}
+
+impl CursorU64 for GlobalSequence {
+    fn to_u64(self) -> u64 {
+        self.0
+    }
+}
+
+/// Scoped snapshot writer that precomputes the scope key once.
+pub struct ScopedSnapshotWriter<C> {
+    writer: SnapshotWriter,
+    scope_key: Vec<u8>,
+    _marker: PhantomData<C>,
+}
+
+impl<C> ScopedSnapshotWriter<C>
+where
+    C: CursorU64,
+{
+    pub fn due(&self, applied: C, policy: SnapshotPolicy) -> Result<SnapshotAdvice> {
+        self.writer
+            .due_scope_key(&self.scope_key, applied.to_u64(), policy)
+    }
+
+    pub fn save_bytes(&mut self, at: C, snapshot_bytes: &[u8]) -> Result<()> {
+        self.writer
+            .save_by_scope_key(&self.scope_key, at.to_u64(), snapshot_bytes)
+    }
+
+    pub fn save_bytes_if_due(
+        &mut self,
+        applied: C,
+        policy: SnapshotPolicy,
+        snapshot_bytes: &[u8],
+    ) -> Result<SnapshotAdvice> {
+        self.writer.save_bytes_if_due_by_scope_key(
+            &self.scope_key,
+            applied.to_u64(),
+            policy,
+            snapshot_bytes,
+        )
+    }
+
+    pub fn save_bytes_if_due_and_prune(
+        &mut self,
+        applied: C,
+        policy: SnapshotPolicy,
+        retention: SnapshotRetention,
+        snapshot_bytes: &[u8],
+    ) -> Result<SnapshotAdvice> {
+        let advice = self.save_bytes_if_due(applied, policy, snapshot_bytes)?;
+        if advice.should_snapshot {
+            let _ = self.prune(retention)?;
+        }
+        Ok(advice)
+    }
+
+    pub fn save_if_due<S>(
+        &mut self,
+        applied: C,
+        policy: SnapshotPolicy,
+        snapshot: &S,
+    ) -> Result<SnapshotAdvice>
+    where
+        S: for<'a> rkyv::Serialize<
+            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
+        >,
+    {
+        let advice = self.due(applied, policy)?;
+        if !advice.should_snapshot {
+            return Ok(advice);
+        }
+
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(snapshot)?;
+        self.save_bytes(applied, bytes.as_slice())?;
+        Ok(advice)
+    }
+
+    pub fn save_if_due_and_prune<S>(
+        &mut self,
+        applied: C,
+        policy: SnapshotPolicy,
+        retention: SnapshotRetention,
+        snapshot: &S,
+    ) -> Result<SnapshotAdvice>
+    where
+        S: for<'a> rkyv::Serialize<
+            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
+        >,
+    {
+        let advice = self.save_if_due(applied, policy, snapshot)?;
+        if advice.should_snapshot {
+            let _ = self.prune(retention)?;
+        }
+        Ok(advice)
+    }
+
+    pub fn prune(&mut self, retention: SnapshotRetention) -> Result<u64> {
+        self.writer.prune_by_scope_key(&self.scope_key, retention)
+    }
+
+    pub fn into_inner(self) -> SnapshotWriter {
+        self.writer
+    }
+}
+
 /// A stream-scoped snapshot writer.
 ///
 /// This precomputes the scope key once, improving ergonomics (fewer params) and
 /// avoiding repeated allocations when snapshotting the same stream scope in a loop.
-pub struct StreamSnapshotWriter {
-    writer: SnapshotWriter,
-    scope_key: Vec<u8>,
-}
-
-impl StreamSnapshotWriter {
-    pub fn due(&self, applied: StreamSequence, policy: SnapshotPolicy) -> Result<SnapshotAdvice> {
-        self.writer
-            .due_scope_key(&self.scope_key, applied.0, policy)
-    }
-
-    pub fn save_bytes(&mut self, at: StreamSequence, snapshot_bytes: &[u8]) -> Result<()> {
-        self.writer
-            .save_by_scope_key(&self.scope_key, at.0, snapshot_bytes)
-    }
-
-    pub fn save_bytes_if_due(
-        &mut self,
-        applied: StreamSequence,
-        policy: SnapshotPolicy,
-        snapshot_bytes: &[u8],
-    ) -> Result<SnapshotAdvice> {
-        self.writer.save_bytes_if_due_by_scope_key(
-            &self.scope_key,
-            applied.0,
-            policy,
-            snapshot_bytes,
-        )
-    }
-
-    pub fn save_bytes_if_due_and_prune(
-        &mut self,
-        applied: StreamSequence,
-        policy: SnapshotPolicy,
-        retention: SnapshotRetention,
-        snapshot_bytes: &[u8],
-    ) -> Result<SnapshotAdvice> {
-        let advice = self.save_bytes_if_due(applied, policy, snapshot_bytes)?;
-        if advice.should_snapshot {
-            let _ = self.prune(retention)?;
-        }
-        Ok(advice)
-    }
-
-    pub fn save_if_due<S>(
-        &mut self,
-        applied: StreamSequence,
-        policy: SnapshotPolicy,
-        snapshot: &S,
-    ) -> Result<SnapshotAdvice>
-    where
-        S: for<'a> rkyv::Serialize<
-            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
-        >,
-    {
-        let advice = self.due(applied, policy)?;
-        if !advice.should_snapshot {
-            return Ok(advice);
-        }
-
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(snapshot)?;
-        self.save_bytes(applied, bytes.as_slice())?;
-        Ok(advice)
-    }
-
-    pub fn save_if_due_and_prune<S>(
-        &mut self,
-        applied: StreamSequence,
-        policy: SnapshotPolicy,
-        retention: SnapshotRetention,
-        snapshot: &S,
-    ) -> Result<SnapshotAdvice>
-    where
-        S: for<'a> rkyv::Serialize<
-            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
-        >,
-    {
-        let advice = self.save_if_due(applied, policy, snapshot)?;
-        if advice.should_snapshot {
-            let _ = self.prune(retention)?;
-        }
-        Ok(advice)
-    }
-
-    pub fn prune(&mut self, retention: SnapshotRetention) -> Result<u64> {
-        self.writer.prune_by_scope_key(&self.scope_key, retention)
-    }
-
-    pub fn into_inner(self) -> SnapshotWriter {
-        self.writer
-    }
-}
+pub type StreamSnapshotWriter = ScopedSnapshotWriter<StreamSequence>;
 
 /// A global/projection-scoped snapshot writer.
-///
-/// Same as `StreamSnapshotWriter`, but for global cursors.
-pub struct GlobalSnapshotWriter {
-    writer: SnapshotWriter,
-    scope_key: Vec<u8>,
-}
-
-impl GlobalSnapshotWriter {
-    pub fn due(&self, applied: GlobalSequence, policy: SnapshotPolicy) -> Result<SnapshotAdvice> {
-        self.writer
-            .due_scope_key(&self.scope_key, applied.0, policy)
-    }
-
-    pub fn save_bytes(&mut self, at: GlobalSequence, snapshot_bytes: &[u8]) -> Result<()> {
-        self.writer
-            .save_by_scope_key(&self.scope_key, at.0, snapshot_bytes)
-    }
-
-    pub fn save_bytes_if_due(
-        &mut self,
-        applied: GlobalSequence,
-        policy: SnapshotPolicy,
-        snapshot_bytes: &[u8],
-    ) -> Result<SnapshotAdvice> {
-        self.writer.save_bytes_if_due_by_scope_key(
-            &self.scope_key,
-            applied.0,
-            policy,
-            snapshot_bytes,
-        )
-    }
-
-    pub fn save_bytes_if_due_and_prune(
-        &mut self,
-        applied: GlobalSequence,
-        policy: SnapshotPolicy,
-        retention: SnapshotRetention,
-        snapshot_bytes: &[u8],
-    ) -> Result<SnapshotAdvice> {
-        let advice = self.save_bytes_if_due(applied, policy, snapshot_bytes)?;
-        if advice.should_snapshot {
-            let _ = self.prune(retention)?;
-        }
-        Ok(advice)
-    }
-
-    pub fn save_if_due<S>(
-        &mut self,
-        applied: GlobalSequence,
-        policy: SnapshotPolicy,
-        snapshot: &S,
-    ) -> Result<SnapshotAdvice>
-    where
-        S: for<'a> rkyv::Serialize<
-            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
-        >,
-    {
-        let advice = self.due(applied, policy)?;
-        if !advice.should_snapshot {
-            return Ok(advice);
-        }
-
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(snapshot)?;
-        self.save_bytes(applied, bytes.as_slice())?;
-        Ok(advice)
-    }
-
-    pub fn save_if_due_and_prune<S>(
-        &mut self,
-        applied: GlobalSequence,
-        policy: SnapshotPolicy,
-        retention: SnapshotRetention,
-        snapshot: &S,
-    ) -> Result<SnapshotAdvice>
-    where
-        S: for<'a> rkyv::Serialize<
-            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
-        >,
-    {
-        let advice = self.save_if_due(applied, policy, snapshot)?;
-        if advice.should_snapshot {
-            let _ = self.prune(retention)?;
-        }
-        Ok(advice)
-    }
-
-    pub fn prune(&mut self, retention: SnapshotRetention) -> Result<u64> {
-        self.writer.prune_by_scope_key(&self.scope_key, retention)
-    }
-
-    pub fn into_inner(self) -> SnapshotWriter {
-        self.writer
-    }
-}
+pub type GlobalSnapshotWriter = ScopedSnapshotWriter<GlobalSequence>;
 
 /// Writer for snapshots.
 pub struct SnapshotWriter {
@@ -240,9 +173,10 @@ impl SnapshotWriter {
     /// Create a stream-scoped writer (recommended for tight loops).
     pub fn for_stream(self, stream_name: &str, stream_id: StreamId) -> StreamSnapshotWriter {
         let scope_key = encode_stream_scope_key(stream_name, stream_id);
-        StreamSnapshotWriter {
+        ScopedSnapshotWriter {
             writer: self,
             scope_key,
+            _marker: PhantomData,
         }
     }
 
@@ -254,9 +188,10 @@ impl SnapshotWriter {
     /// Create a global/projection-scoped writer (recommended for tight loops).
     pub fn for_global(self, projection_name: &str) -> GlobalSnapshotWriter {
         let scope_key = encode_global_scope_key(projection_name);
-        GlobalSnapshotWriter {
+        ScopedSnapshotWriter {
             writer: self,
             scope_key,
+            _marker: PhantomData,
         }
     }
 
@@ -295,12 +230,13 @@ impl SnapshotWriter {
         snapshot_bytes: &[u8],
     ) -> Result<SnapshotAdvice> {
         let scope_key = encode_stream_scope_key(stream_name, stream_id);
-        let advice =
-            self.save_bytes_if_due_by_scope_key(&scope_key, applied.0, policy, snapshot_bytes)?;
-        if advice.should_snapshot {
-            let _ = self.prune_by_scope_key(&scope_key, retention)?;
-        }
-        Ok(advice)
+        self.save_bytes_if_due_and_prune_by_scope_key(
+            &scope_key,
+            applied.0,
+            policy,
+            retention,
+            snapshot_bytes,
+        )
     }
 
     /// Save a global snapshot **only if** the policy says it's due.
@@ -327,12 +263,13 @@ impl SnapshotWriter {
         snapshot_bytes: &[u8],
     ) -> Result<SnapshotAdvice> {
         let scope_key = encode_global_scope_key(projection_name);
-        let advice =
-            self.save_bytes_if_due_by_scope_key(&scope_key, applied.0, policy, snapshot_bytes)?;
-        if advice.should_snapshot {
-            let _ = self.prune_by_scope_key(&scope_key, retention)?;
-        }
-        Ok(advice)
+        self.save_bytes_if_due_and_prune_by_scope_key(
+            &scope_key,
+            applied.0,
+            policy,
+            retention,
+            snapshot_bytes,
+        )
     }
 
     /// Save a snapshot **only if** the policy says it's due (generic scope).
@@ -359,12 +296,13 @@ impl SnapshotWriter {
         snapshot_bytes: &[u8],
     ) -> Result<SnapshotAdvice> {
         let scope_key = encode_scope_key(scope);
-        let advice =
-            self.save_bytes_if_due_by_scope_key(&scope_key, applied, policy, snapshot_bytes)?;
-        if advice.should_snapshot {
-            let _ = self.prune_by_scope_key(&scope_key, retention)?;
-        }
-        Ok(advice)
+        self.save_bytes_if_due_and_prune_by_scope_key(
+            &scope_key,
+            applied,
+            policy,
+            retention,
+            snapshot_bytes,
+        )
     }
 
     pub fn save_stream_bytes(
@@ -472,14 +410,7 @@ impl SnapshotWriter {
         >,
     {
         let scope_key = encode_stream_scope_key(stream_name, stream_id);
-        let advice = self.due_scope_key(&scope_key, applied.0, policy)?;
-        if !advice.should_snapshot {
-            return Ok(advice);
-        }
-
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(snapshot)?;
-        self.save_by_scope_key(&scope_key, applied.0, bytes.as_slice())?;
-        Ok(advice)
+        self.save_typed_if_due_by_scope_key(&scope_key, applied.0, policy, snapshot)
     }
 
     /// Serialize and save a stream snapshot if due, then prune old snapshots for the scope.
@@ -498,11 +429,9 @@ impl SnapshotWriter {
         >,
     {
         let scope_key = encode_stream_scope_key(stream_name, stream_id);
-        let advice = self.save_stream_if_due(stream_name, stream_id, applied, policy, snapshot)?;
-        if advice.should_snapshot {
-            let _ = self.prune_by_scope_key(&scope_key, retention)?;
-        }
-        Ok(advice)
+        self.save_typed_if_due_and_prune_by_scope_key(
+            &scope_key, applied.0, policy, retention, snapshot,
+        )
     }
 
     /// Serialize and save a global snapshot **only if** the policy says it's due.
@@ -521,14 +450,7 @@ impl SnapshotWriter {
         >,
     {
         let scope_key = encode_global_scope_key(projection_name);
-        let advice = self.due_scope_key(&scope_key, applied.0, policy)?;
-        if !advice.should_snapshot {
-            return Ok(advice);
-        }
-
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(snapshot)?;
-        self.save_by_scope_key(&scope_key, applied.0, bytes.as_slice())?;
-        Ok(advice)
+        self.save_typed_if_due_by_scope_key(&scope_key, applied.0, policy, snapshot)
     }
 
     /// Serialize and save a global snapshot if due, then prune old snapshots for the scope.
@@ -546,11 +468,9 @@ impl SnapshotWriter {
         >,
     {
         let scope_key = encode_global_scope_key(projection_name);
-        let advice = self.save_global_if_due(projection_name, applied, policy, snapshot)?;
-        if advice.should_snapshot {
-            let _ = self.prune_by_scope_key(&scope_key, retention)?;
-        }
-        Ok(advice)
+        self.save_typed_if_due_and_prune_by_scope_key(
+            &scope_key, applied.0, policy, retention, snapshot,
+        )
     }
 
     /// Serialize and save a snapshot **only if** the policy says it's due (generic scope).
@@ -569,14 +489,7 @@ impl SnapshotWriter {
         >,
     {
         let scope_key = encode_scope_key(scope);
-        let advice = self.due_scope_key(&scope_key, applied, policy)?;
-        if !advice.should_snapshot {
-            return Ok(advice);
-        }
-
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(snapshot)?;
-        self.save_by_scope_key(&scope_key, applied, bytes.as_slice())?;
-        Ok(advice)
+        self.save_typed_if_due_by_scope_key(&scope_key, applied, policy, snapshot)
     }
 
     /// Serialize and save a snapshot if due (generic scope), then prune old snapshots for the scope.
@@ -594,11 +507,9 @@ impl SnapshotWriter {
         >,
     {
         let scope_key = encode_scope_key(scope);
-        let advice = self.save_if_due(scope, applied, policy, snapshot)?;
-        if advice.should_snapshot {
-            let _ = self.prune_by_scope_key(&scope_key, retention)?;
-        }
-        Ok(advice)
+        self.save_typed_if_due_and_prune_by_scope_key(
+            &scope_key, applied, policy, retention, snapshot,
+        )
     }
 
     // ---------------------------------------------------------------------
@@ -664,19 +575,7 @@ impl SnapshotWriter {
     ) -> Result<SnapshotAdvice> {
         let rtxn = self.env.read_txn()?;
         let last = self.latest_db.get(&rtxn, scope_key)?;
-
-        let events_since_last_snapshot = match last {
-            Some(last_cursor) if applied >= last_cursor => applied - last_cursor,
-            Some(_) => 0,
-            None => applied.saturating_add(1),
-        };
-
-        let should_snapshot = events_since_last_snapshot >= policy.every_n_events.get();
-
-        Ok(SnapshotAdvice {
-            should_snapshot,
-            events_since_last_snapshot,
-        })
+        Ok(compute_advice(last, applied, policy))
     }
 
     fn save_bytes_if_due_by_scope_key(
@@ -691,6 +590,64 @@ impl SnapshotWriter {
             return Ok(advice);
         }
         self.save_by_scope_key(scope_key, applied, snapshot_bytes)?;
+        Ok(advice)
+    }
+
+    fn save_bytes_if_due_and_prune_by_scope_key(
+        &mut self,
+        scope_key: &Vec<u8>,
+        applied: u64,
+        policy: SnapshotPolicy,
+        retention: SnapshotRetention,
+        snapshot_bytes: &[u8],
+    ) -> Result<SnapshotAdvice> {
+        let advice =
+            self.save_bytes_if_due_by_scope_key(scope_key, applied, policy, snapshot_bytes)?;
+        if advice.should_snapshot {
+            let _ = self.prune_by_scope_key(scope_key, retention)?;
+        }
+        Ok(advice)
+    }
+
+    fn save_typed_if_due_by_scope_key<S>(
+        &mut self,
+        scope_key: &Vec<u8>,
+        applied: u64,
+        policy: SnapshotPolicy,
+        snapshot: &S,
+    ) -> Result<SnapshotAdvice>
+    where
+        S: for<'a> rkyv::Serialize<
+            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
+        >,
+    {
+        let advice = self.due_scope_key(scope_key, applied, policy)?;
+        if !advice.should_snapshot {
+            return Ok(advice);
+        }
+
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(snapshot)?;
+        self.save_by_scope_key(scope_key, applied, bytes.as_slice())?;
+        Ok(advice)
+    }
+
+    fn save_typed_if_due_and_prune_by_scope_key<S>(
+        &mut self,
+        scope_key: &Vec<u8>,
+        applied: u64,
+        policy: SnapshotPolicy,
+        retention: SnapshotRetention,
+        snapshot: &S,
+    ) -> Result<SnapshotAdvice>
+    where
+        S: for<'a> rkyv::Serialize<
+            HighSerializer<AlignedVec, ArenaHandle<'a>, rkyv::rancor::Error>,
+        >,
+    {
+        let advice = self.save_typed_if_due_by_scope_key(scope_key, applied, policy, snapshot)?;
+        if advice.should_snapshot {
+            let _ = self.prune_by_scope_key(scope_key, retention)?;
+        }
         Ok(advice)
     }
 

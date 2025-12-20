@@ -16,6 +16,7 @@ use heed::{Database, Env, EnvOpenOptions};
 
 use crate::constants;
 use crate::error::Result;
+use crate::snapshot::advice::compute_advice;
 use crate::snapshot::codecs::SnapshotKeyCodec;
 use crate::snapshot::keys::{encode_global_scope_key, encode_stream_scope_key};
 use crate::snapshot::{
@@ -141,19 +142,7 @@ impl SnapshotStore {
     ) -> Result<SnapshotAdvice> {
         let rtxn = self.env.read_txn()?;
         let last = self.latest_db.get(&rtxn, scope_key)?;
-
-        let events_since_last_snapshot = match last {
-            Some(last_cursor) if applied >= last_cursor => applied - last_cursor,
-            Some(_) => 0,
-            None => applied.saturating_add(1),
-        };
-
-        let should_snapshot = events_since_last_snapshot >= policy.every_n_events.get();
-
-        Ok(SnapshotAdvice {
-            should_snapshot,
-            events_since_last_snapshot,
-        })
+        Ok(compute_advice(last, applied, policy))
     }
 
     /// Convenience: open snapshot store at `<db_path>/snapshots`.
