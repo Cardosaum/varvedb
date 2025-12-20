@@ -36,6 +36,7 @@ log_error = ["log"]
 debug_eprintln = []
 serde = ["dep:serde"]
 notify = ["dep:event-listener"]
+snapshot = []
 
 [dependencies]
 heed = "0.22.0"

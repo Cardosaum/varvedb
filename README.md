@@ -40,6 +40,7 @@ varvedb = { version = "0.4", features = ["notify"] }
 
 Available features:
 - **`notify`**: Enables runtime-agnostic async notifications for write events. Allows readers to efficiently wait for new events without polling.
+- **`snapshot`**: Enables the optional snapshot subsystem (stored in a separate LMDB environment) for faster rebuilds by replaying only the “tail” events after a saved snapshot.
 
 ### Basic Usage
 

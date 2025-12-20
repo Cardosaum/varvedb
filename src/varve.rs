@@ -13,6 +13,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+#[cfg(feature = "snapshot")]
+use std::path::PathBuf;
+
 use heed::{Env, EnvOpenOptions};
 
 use crate::config::VarveConfig;
@@ -43,6 +46,9 @@ pub struct Varve {
     next_global_seq: Arc<AtomicU64>,
     /// Per-stream database handles (lazy creation)
     stream_dbs: HashMap<String, StreamDbs>,
+    /// Base path for this database (used by optional subsystems, e.g. snapshots).
+    #[cfg(feature = "snapshot")]
+    base_path: PathBuf,
     /// Write notification watcher (optional, only when notify feature is enabled)
     #[cfg(feature = "notify")]
     watcher: WriteWatcher,
@@ -56,6 +62,9 @@ impl Varve {
 
     /// Create a new VarveDB instance at the specified path with custom configuration.
     pub fn with_config(path: impl AsRef<Path>, config: VarveConfig) -> Result<Self> {
+        #[cfg(feature = "snapshot")]
+        let base_path = path.as_ref().to_path_buf();
+
         let env = unsafe {
             EnvOpenOptions::new()
                 .read_txn_with_tls()
@@ -91,6 +100,8 @@ impl Varve {
             global_db,
             next_global_seq: next_global_seq_arc,
             stream_dbs: HashMap::new(),
+            #[cfg(feature = "snapshot")]
+            base_path,
             #[cfg(feature = "notify")]
             watcher,
         })
@@ -175,6 +186,14 @@ impl Varve {
             #[cfg(feature = "notify")]
             watcher: self.watcher.clone(),
         }
+    }
+
+    /// Open the snapshot subsystem for this database (opt-in).
+    ///
+    /// This opens a separate LMDB environment under `<db_path>/snapshots`.
+    #[cfg(feature = "snapshot")]
+    pub fn snapshots(&self) -> Result<crate::snapshot::SnapshotStore> {
+        crate::snapshot::SnapshotStore::open_default_under(&self.base_path)
     }
 
     /// Get a write watcher for async notification of new writes.

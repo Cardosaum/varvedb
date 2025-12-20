@@ -22,6 +22,11 @@ pub enum Error {
     #[error(transparent)]
     Rkyv(#[from] RkyvError),
 
+    /// IO error (used by optional subsystems).
+    #[cfg(feature = "snapshot")]
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
     /// Database not found.
     #[error("Database not found: {0}")]
     DatabaseNotFound(String),
@@ -42,6 +47,11 @@ pub enum Error {
     #[cfg(feature = "log")]
     #[error(transparent)]
     Log(#[from] LogError),
+
+    /// Snapshot subsystem error.
+    #[cfg(feature = "snapshot")]
+    #[error("Snapshot error: {0}")]
+    Snapshot(String),
 }
 
 /// Error type for logging operations.

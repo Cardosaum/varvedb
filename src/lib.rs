@@ -19,6 +19,8 @@ pub mod global;
 pub mod log;
 #[cfg(feature = "notify")]
 pub mod notify;
+#[cfg(feature = "snapshot")]
+pub mod snapshot;
 pub mod stream;
 pub mod types;
 pub mod varve;
@@ -30,6 +32,12 @@ pub use event::GlobalEvent;
 pub use global::{GlobalIterator, GlobalReader};
 #[cfg(feature = "notify")]
 pub use notify::WriteWatcher;
+#[cfg(feature = "snapshot")]
+pub use snapshot::{
+    GlobalSnapshotWriter, SnapshotAdvice, SnapshotConfig, SnapshotCursor, SnapshotGlobalScope,
+    SnapshotPolicy, SnapshotReader, SnapshotRetention, SnapshotScope, SnapshotStore,
+    SnapshotStreamScope, SnapshotWriter, StreamSnapshotWriter,
+};
 pub use stream::{HighSerializer, LowSerializer, Stream, StreamIterator, StreamReader};
 pub use types::{GlobalSequence, StreamId, StreamKey, StreamSequence};
 pub use varve::Varve;
