@@ -19,7 +19,7 @@ env:
 
 jobs:
   test:
-    name: Test
+    name: Test (features)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -27,8 +27,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
         run: sudo apt-get install -y liblmdb-dev
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Run tests (no default features)
+        run: cargo test --no-default-features --verbose
+      - name: Run tests (all features)
+        run: cargo test --all-features --verbose
 
   audit:
     name: Security Audit

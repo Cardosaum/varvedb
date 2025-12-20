@@ -21,10 +21,13 @@ cargo fmt -- --check
 
 # 3. Clippy
 echo "Running Clippy..."
-cargo clippy -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 
 # 4. Tests
-echo "Running tests..."
-cargo test
+echo "Running tests (no default features)..."
+cargo test --no-default-features
+
+echo "Running tests (all features)..."
+cargo test --all-features
 
 echo "All checks passed! 🚀"
