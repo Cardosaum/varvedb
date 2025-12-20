@@ -22,6 +22,9 @@ use crate::global::GlobalReader;
 use crate::stream::{Stream, StreamCore};
 use crate::types::{GlobalEventsDb, GlobalSequence, StreamIndexDb, StreamMetaDb};
 
+#[cfg(feature = "notify")]
+use crate::notify::WriteWatcher;
+
 /// Per-stream database handles.
 struct StreamDbs {
     index_db: StreamIndexDb,
@@ -40,6 +43,9 @@ pub struct Varve {
     next_global_seq: Arc<AtomicU64>,
     /// Per-stream database handles (lazy creation)
     stream_dbs: HashMap<String, StreamDbs>,
+    /// Write notification watcher (optional, only when notify feature is enabled)
+    #[cfg(feature = "notify")]
+    watcher: WriteWatcher,
 }
 
 impl Varve {
@@ -75,11 +81,18 @@ impl Varve {
             }
         };
 
+        let next_global_seq_arc = Arc::new(AtomicU64::new(next_global_seq));
+
+        #[cfg(feature = "notify")]
+        let watcher = WriteWatcher::new(GlobalSequence(next_global_seq));
+
         Ok(Self {
             env,
             global_db,
-            next_global_seq: Arc::new(AtomicU64::new(next_global_seq)),
+            next_global_seq: next_global_seq_arc,
             stream_dbs: HashMap::new(),
+            #[cfg(feature = "notify")]
+            watcher,
         })
     }
 
@@ -107,6 +120,8 @@ impl Varve {
             meta_db,
             global_db: self.global_db,
             next_global_seq: Arc::clone(&self.next_global_seq),
+            #[cfg(feature = "notify")]
+            watcher: self.watcher.clone(),
         });
 
         Ok(Stream::new(stream_core))
@@ -157,7 +172,17 @@ impl Varve {
             env: self.env.clone(),
             global_db: self.global_db,
             scratch: rkyv::util::AlignedVec::new(),
+            #[cfg(feature = "notify")]
+            watcher: self.watcher.clone(),
         }
+    }
+
+    /// Get a write watcher for async notification of new writes.
+    ///
+    /// This allows async readers to efficiently wait for new events without polling.
+    #[cfg(feature = "notify")]
+    pub fn watcher(&self) -> WriteWatcher {
+        self.watcher.clone()
     }
 }
 
@@ -747,5 +772,42 @@ mod tests {
             let events = iter.collect_bytes().unwrap();
             assert_eq!(events.len(), 3);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "notify")]
+    fn test_watcher_initializes_to_next_global_seq_on_open_and_reopen() {
+        let dir = tempdir().expect("Failed to create temp dir");
+
+        // Fresh DB
+        {
+            let mut varve = Varve::new(dir.path()).expect("Failed to create Varve");
+
+            assert_eq!(
+                varve.watcher().committed_next_global_seq(),
+                varve.next_global_seq()
+            );
+
+            let mut stream = varve
+                .stream::<u64, 64>("events")
+                .expect("Failed to create stream");
+
+            stream.append(StreamId(1), &1u64).unwrap();
+            stream.append(StreamId(1), &2u64).unwrap();
+
+            assert_eq!(varve.next_global_seq(), GlobalSequence(2));
+            assert_eq!(
+                varve.watcher().committed_next_global_seq(),
+                GlobalSequence(2)
+            );
+        }
+
+        // Reopen should initialize watcher from persisted data.
+        let varve = Varve::new(dir.path()).expect("Failed to reopen Varve");
+        assert_eq!(varve.next_global_seq(), GlobalSequence(2));
+        assert_eq!(
+            varve.watcher().committed_next_global_seq(),
+            GlobalSequence(2)
+        );
     }
 }

@@ -19,6 +19,9 @@ use crate::types::{
     GlobalEventRecord, GlobalEventsDb, StreamId, StreamIndexDb, StreamKey, StreamSequence,
 };
 
+#[cfg(feature = "notify")]
+use crate::notify::WriteWatcher;
+
 /// A cheap, cloneable reader view for a stream.
 ///
 /// Readers can be cloned and shared across threads to provide concurrent
@@ -130,6 +133,14 @@ impl<T> StreamReader<T> {
             stream_id,
         })
     }
+
+    /// Get a write watcher for async notification of new writes.
+    ///
+    /// This allows async readers to efficiently wait for new events without polling.
+    #[cfg(feature = "notify")]
+    pub fn watcher(&self) -> WriteWatcher {
+        self.core.watcher.clone()
+    }
 }
 
 impl<T> Clone for StreamReader<T> {
@@ -201,5 +212,68 @@ impl<'a> StreamIterator<'a> {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "notify"))]
+mod notify_tests {
+    use rstest::fixture;
+    use rstest::rstest;
+    use tempfile::TempDir;
+
+    use crate::{GlobalSequence, StreamId, Varve};
+
+    struct TestDb {
+        varve: Varve,
+        _dir: TempDir,
+    }
+
+    #[fixture]
+    fn db() -> TestDb {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let varve = Varve::new(dir.path()).expect("Failed to create Varve");
+        TestDb { varve, _dir: dir }
+    }
+
+    #[rstest]
+    fn stream_reader_watcher_sees_new_writes(mut db: TestDb) {
+        let mut stream = db
+            .varve
+            .stream::<u64, 64>("events")
+            .expect("Failed to create stream");
+
+        let reader = stream.reader();
+        let watcher = reader.watcher();
+
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(0));
+
+        stream
+            .append(StreamId(1), &123u64)
+            .expect("Failed to append");
+
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(1));
+    }
+
+    #[rstest]
+    fn stream_reader_clone_preserves_watcher(mut db: TestDb) {
+        let mut stream = db
+            .varve
+            .stream::<u64, 64>("events")
+            .expect("Failed to create stream");
+
+        let reader = stream.reader();
+        let reader2 = reader.clone();
+
+        let w1 = reader.watcher();
+        let w2 = reader2.watcher();
+
+        assert_eq!(w1.committed_next_global_seq(), GlobalSequence(0));
+        assert_eq!(w2.committed_next_global_seq(), GlobalSequence(0));
+
+        stream.append(StreamId(1), &1u64).unwrap();
+        stream.append(StreamId(1), &2u64).unwrap();
+
+        assert_eq!(w1.committed_next_global_seq(), GlobalSequence(2));
+        assert_eq!(w2.committed_next_global_seq(), GlobalSequence(2));
     }
 }

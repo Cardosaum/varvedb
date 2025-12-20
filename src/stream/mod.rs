@@ -96,6 +96,13 @@ impl<T, const N: usize> Stream<T, N> {
         }
     }
 
+    /// Notify watchers that a commit succeeded and the committed watermark advanced.
+    #[cfg(feature = "notify")]
+    #[inline]
+    fn notify_commit(&self, new_next_seq: GlobalSequence) {
+        self.core.watcher.notify(new_next_seq);
+    }
+
     /// Store event in global DB and index in stream index DB.
     fn store_event(
         &mut self,
@@ -143,6 +150,10 @@ impl<T, const N: usize> Stream<T, N> {
             .put(&mut wtxn, &stream_id.0, &(stream_seq.0 + 1))?;
 
         timed_dbg!("commit", wtxn.commit())?;
+
+        // Notify watchers AFTER successful commit
+        #[cfg(feature = "notify")]
+        self.notify_commit(GlobalSequence(global_seq_val + 1));
 
         Ok(global_seq)
     }
@@ -210,6 +221,10 @@ impl<T, const N: usize> Stream<T, N> {
             .put(&mut wtxn, &stream_id.0, &current_stream_seq)?;
 
         timed_dbg!("batch_commit", wtxn.commit())?;
+
+        // Notify watchers AFTER successful commit
+        #[cfg(feature = "notify")]
+        self.notify_commit(GlobalSequence(current_global_seq));
 
         Ok(results)
     }
@@ -374,5 +389,81 @@ impl<T, const N: usize> Stream<T, N> {
             scratch: rkyv::util::AlignedVec::new(),
             _marker: PhantomData,
         }
+    }
+}
+
+#[cfg(all(test, feature = "notify"))]
+mod notify_tests {
+    use rstest::fixture;
+    use rstest::rstest;
+    use tempfile::TempDir;
+
+    use crate::types::{GlobalSequence, StreamId};
+    use crate::Varve;
+
+    struct TestDb {
+        varve: Varve,
+        _dir: TempDir,
+    }
+
+    #[fixture]
+    fn db() -> TestDb {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let varve = Varve::new(dir.path()).expect("Failed to create Varve");
+        TestDb { varve, _dir: dir }
+    }
+
+    #[rstest]
+    fn append_notifies_after_commit(mut db: TestDb) {
+        let watcher = db.varve.watcher();
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(0));
+
+        let mut stream = db
+            .varve
+            .stream::<u64, 64>("events")
+            .expect("Failed to create stream");
+
+        stream
+            .append(StreamId(1), &123u64)
+            .expect("Failed to append");
+
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(1));
+    }
+
+    #[rstest]
+    fn append_batch_notifies_after_commit(mut db: TestDb) {
+        let watcher = db.varve.watcher();
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(0));
+
+        let mut stream = db
+            .varve
+            .stream::<u64, 64>("events")
+            .expect("Failed to create stream");
+
+        let events = [1u64, 2u64, 3u64];
+        stream
+            .append_batch(StreamId(1), &events)
+            .expect("Failed to batch append");
+
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(3));
+    }
+
+    #[rstest]
+    fn append_batch_empty_does_not_notify(mut db: TestDb) {
+        let watcher = db.varve.watcher();
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(0));
+
+        let mut stream = db
+            .varve
+            .stream::<u64, 64>("events")
+            .expect("Failed to create stream");
+
+        let empty: [u64; 0] = [];
+        let res = stream
+            .append_batch(StreamId(1), &empty)
+            .expect("Failed to batch append");
+
+        assert!(res.is_empty());
+        assert_eq!(watcher.committed_next_global_seq(), GlobalSequence(0));
     }
 }

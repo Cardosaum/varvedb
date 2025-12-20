@@ -17,6 +17,8 @@ pub mod error;
 pub mod event;
 pub mod global;
 pub mod log;
+#[cfg(feature = "notify")]
+pub mod notify;
 pub mod stream;
 pub mod types;
 pub mod varve;
@@ -26,6 +28,8 @@ pub use config::VarveConfig;
 pub use error::{Error, Result};
 pub use event::GlobalEvent;
 pub use global::{GlobalIterator, GlobalReader};
+#[cfg(feature = "notify")]
+pub use notify::WriteWatcher;
 pub use stream::{HighSerializer, LowSerializer, Stream, StreamIterator, StreamReader};
 pub use types::{GlobalSequence, StreamId, StreamKey, StreamSequence};
 pub use varve::Varve;

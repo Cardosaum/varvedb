@@ -17,6 +17,7 @@ It is designed for event sourcing, offering strongly-typed events, zero-copy des
 - **ACID Transactions**: Full crash safety and data integrity guarantees via LMDB.
 - **Stream Organization**: Organize events into logical streams (e.g., "orders", "users") with efficient per-stream iteration.
 - **Global Ordering**: All events receive a global sequence number for total ordering across streams.
+- **Async Notifications** *(optional)*: Runtime-agnostic write notifications allow async readers to efficiently await new events without polling.
 
 ## Getting Started
 
@@ -27,6 +28,18 @@ Add `varvedb` to your `Cargo.toml`:
 varvedb = "0.4"
 rkyv = { version = "0.8", features = ["bytecheck"] }
 ```
+
+### Optional Features
+
+VarveDB supports optional features that can be enabled in your `Cargo.toml`:
+
+```toml
+[dependencies]
+varvedb = { version = "0.4", features = ["notify"] }
+```
+
+Available features:
+- **`notify`**: Enables runtime-agnostic async notifications for write events. Allows readers to efficiently wait for new events without polling.
 
 ### Basic Usage
 
@@ -181,6 +194,47 @@ let event = global_reader.get(GlobalSequence(0))?;
 let iter = global_reader.iter_from(GlobalSequence(0))?;
 ```
 
+## Async Notifications (Optional)
+
+When the `notify` feature is enabled, VarveDB provides runtime-agnostic write notifications that allow async readers to efficiently wait for new events:
+
+```rust
+use varvedb::{Varve, GlobalSequence};
+
+// Enable with: varvedb = { version = "0.4", features = ["notify"] }
+
+let mut varve = Varve::new("./data")?;
+let watcher = varve.watcher();
+
+// In an async context (works with any runtime: tokio, async-std, smol, etc.)
+let mut cursor = GlobalSequence(0);
+loop {
+    // Try to read new events
+    let reader = varve.global_reader();
+    let iter = reader.iter_from(cursor)?;
+    let events = iter.collect_all()?;
+    
+    if events.is_empty() {
+        // No new events - efficiently wait for writes instead of polling
+        cursor = watcher.wait_for_global_seq(cursor).await;
+    } else {
+        // Process events...
+        for event in events {
+            println!("Event at global seq {}: {:?}", event.global_seq.0, event);
+            cursor = GlobalSequence(event.global_seq.0 + 1);
+        }
+    }
+}
+```
+
+The notification system:
+- **Runtime-agnostic**: Works with any async executor (Tokio, async-std, smol, etc.)
+- **Zero polling overhead**: Readers sleep until writers notify them
+- **In-process only**: Designed for embedded use cases where readers and writers share the same process
+- **Watermark-based**: Notifications indicate committed writes, readers still query LMDB for actual data
+
+All readers (`GlobalReader`, `StreamReader`) expose a `watcher()` method when the feature is enabled.
+
 ## Use Cases
 
 - **Event Sourcing**: Store every state change in your application as an immutable sequence of events.
@@ -226,7 +280,7 @@ VarveDB is under active development. The core engine is functional and benchmark
 - 🚧 Optimistic Concurrency Control (ExpectedVersion)
 - 🚧 Authenticated encryption at rest
 - 🚧 Snapshot exports for backups
-- 🚧 Reactive subscriptions (watch channels)
+- ✅ Async notifications (write watcher)
 
 ## Links
 

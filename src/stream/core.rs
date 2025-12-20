@@ -15,6 +15,9 @@ use heed::Env;
 
 use crate::types::{GlobalEventsDb, StreamIndexDb, StreamMetaDb};
 
+#[cfg(feature = "notify")]
+use crate::notify::WriteWatcher;
+
 /// Shared core state for stream operations.
 ///
 /// This is shared between the main Stream handle and any StreamReader clones.
@@ -26,4 +29,7 @@ pub(crate) struct StreamCore {
     pub global_db: GlobalEventsDb,
     /// Shared global sequence counter (atomic for lock-free access)
     pub next_global_seq: Arc<AtomicU64>,
+    /// Write notification watcher (optional, only when notify feature is enabled)
+    #[cfg(feature = "notify")]
+    pub watcher: WriteWatcher,
 }
