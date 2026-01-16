@@ -16,7 +16,6 @@ use heed::{PutFlags, RoTxn, WithTls};
 use rkyv::ser::allocator::Arena;
 
 use crate::error::{Error, Result};
-use crate::timed_dbg;
 use crate::types::{GlobalEventRecord, GlobalSequence, StreamId, StreamKey, StreamSequence};
 
 pub(crate) mod core;
