@@ -18,7 +18,7 @@ use std::path::PathBuf;
 
 use heed::{Env, EnvOpenOptions};
 
-use crate::config::VarveConfig;
+use crate::config::{PathCreation, VarveConfig};
 use crate::constants;
 use crate::error::Result;
 use crate::global::GlobalReader;
@@ -62,8 +62,23 @@ impl Varve {
 
     /// Create a new VarveDB instance at the specified path with custom configuration.
     pub fn with_config(path: impl AsRef<Path>, config: VarveConfig) -> Result<Self> {
+        let path = path.as_ref();
+
+        // Handle directory creation based on config
+        match config.path_creation {
+            PathCreation::None => {}
+            PathCreation::Parents => {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+            }
+            PathCreation::All => {
+                std::fs::create_dir_all(path)?;
+            }
+        }
+
         #[cfg(feature = "snapshot")]
-        let base_path = path.as_ref().to_path_buf();
+        let base_path = path.to_path_buf();
 
         let env = unsafe {
             EnvOpenOptions::new()
@@ -208,9 +223,13 @@ impl Varve {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::PathCreation;
     use crate::types::{StreamId, StreamSequence};
     use rkyv::{Archive, Deserialize, Serialize};
-    use tempfile::tempdir;
+    use rstest::{fixture, rstest};
+    use rstest_reuse::{apply, template};
+    use std::path::PathBuf;
+    use tempfile::{tempdir, TempDir};
 
     // ============================================
     // Event type definitions
@@ -828,5 +847,94 @@ mod tests {
             varve.watcher().committed_next_global_seq(),
             GlobalSequence(2)
         );
+    }
+
+    // ============================================
+    // PathCreation tests
+    // ============================================
+
+    struct PathCreationHarness {
+        _dir: TempDir,
+        nested_path: PathBuf,
+    }
+
+    #[fixture]
+    fn path_creation_harness() -> PathCreationHarness {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let nested_path = dir.path().join("a").join("b").join("c").join("db");
+        PathCreationHarness {
+            _dir: dir,
+            nested_path,
+        }
+    }
+
+    #[template]
+    #[rstest]
+    #[case::none(PathCreation::None)]
+    #[case::parents(PathCreation::Parents)]
+    #[case::all(PathCreation::All)]
+    fn path_creation_variants(#[case] mode: PathCreation) {}
+
+    #[apply(path_creation_variants)]
+    fn path_creation_behavior(
+        #[case] mode: PathCreation,
+        path_creation_harness: PathCreationHarness,
+    ) {
+        let nested_path = &path_creation_harness.nested_path;
+        let parent = nested_path.parent().unwrap();
+
+        // Initially nothing exists
+        assert!(!parent.exists());
+        assert!(!nested_path.exists());
+
+        let config = VarveConfig {
+            path_creation: mode,
+            ..Default::default()
+        };
+
+        let result = Varve::with_config(nested_path, config);
+
+        match mode {
+            PathCreation::None => {
+                assert!(result.is_err(), "None should fail on missing path");
+                assert!(!parent.exists());
+            }
+            PathCreation::Parents => {
+                // Parents created, db dir may or may not exist depending on LMDB
+                assert!(parent.exists(), "Parents should create parent directories");
+            }
+            PathCreation::All => {
+                assert!(result.is_ok(), "All should succeed");
+                assert!(nested_path.exists(), "All should create full path");
+            }
+        }
+    }
+
+    #[rstest]
+    fn path_creation_all_db_is_usable(path_creation_harness: PathCreationHarness) {
+        let config = VarveConfig {
+            path_creation: PathCreation::All,
+            ..Default::default()
+        };
+
+        let mut varve =
+            Varve::with_config(&path_creation_harness.nested_path, config).expect("Should open");
+
+        let mut stream = varve
+            .stream::<SimpleEvent, 1024>("test")
+            .expect("Should create stream");
+
+        let (seq, _) = stream
+            .append(
+                StreamId(1),
+                &SimpleEvent {
+                    id: 42,
+                    timestamp: 1000,
+                    value: 99,
+                },
+            )
+            .expect("Should append");
+
+        assert_eq!(seq.0, 0);
     }
 }

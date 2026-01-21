@@ -10,6 +10,20 @@
 
 use crate::constants;
 
+/// Controls whether VarveDB creates missing directories when opening.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum PathCreation {
+    /// Do not create anything; fail if path doesn't exist (default).
+    #[default]
+    None,
+    /// Create parent directories only; fail if database directory doesn't exist.
+    Parents,
+    /// Create database directory and all parent directories if needed.
+    All,
+}
+
 /// Configuration for opening a VarveDB database.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -18,6 +32,8 @@ pub struct VarveConfig {
     pub max_dbs: u32,
     /// Maximum size of the memory-mapped database file.
     pub map_size: usize,
+    /// Controls directory creation when opening the database.
+    pub path_creation: PathCreation,
 }
 
 impl Default for VarveConfig {
@@ -25,6 +41,7 @@ impl Default for VarveConfig {
         Self {
             max_dbs: constants::DEFAULT_MAX_DBS,
             map_size: constants::DEFAULT_MAP_SIZE,
+            path_creation: PathCreation::default(),
         }
     }
 }

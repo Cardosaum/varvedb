@@ -26,7 +26,7 @@ pub mod types;
 pub mod varve;
 
 // Re-export main types for convenience and backward compatibility
-pub use config::VarveConfig;
+pub use config::{PathCreation, VarveConfig};
 pub use error::{Error, Result};
 pub use event::GlobalEvent;
 pub use global::{GlobalIterator, GlobalReader};
