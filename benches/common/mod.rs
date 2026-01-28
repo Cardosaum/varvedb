@@ -221,6 +221,7 @@ impl BenchFixture {
         let config = VarveConfig {
             max_dbs: 64,
             map_size: 1024 * 1024 * 1024, // 1GB for benchmarks
+            ..VarveConfig::default()
         };
         Varve::with_config(&self.path, config).expect("Failed to create Varve")
     }

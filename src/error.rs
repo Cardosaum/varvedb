@@ -22,8 +22,7 @@ pub enum Error {
     #[error(transparent)]
     Rkyv(#[from] RkyvError),
 
-    /// IO error (used by optional subsystems).
-    #[cfg(feature = "snapshot")]
+    /// IO error (e.g., directory creation, snapshots).
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
