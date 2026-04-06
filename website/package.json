@@ -13,7 +13,7 @@
     "pagefind": "^1.4.0",
     "remark-gfm": "^4.0.1",
     "remark-github-blockquote-alert": "^2.0.0",
-    "vite": "^7.2.4"
+    "vite": "^7.3.2"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
